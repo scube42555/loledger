@@ -33,3 +33,14 @@ def test_schedule_d_lines_from_8949_boxes_and_carryover() -> None:
     sd = ty.sched_d
     assert (sd["2h"], sd["3h"], sd["10h"], sd["6"]) == (D(60), D(-20), D(30), D(-500))
     assert (sd["7"], sd["15"], sd["16"], sd["21"]) == (D(-460), D(30), D(-430), D(-430))
+
+
+def test_taxact_csv_in_7_and_6_column_layouts() -> None:
+    from txclass.taxforms import taxact6_csv, taxact_csv
+
+    ty = TaxYear(2025, [_line("I", "short", "100", "80"), _line("L", "long", "50", "70")], {}, [],
+                 (Decimal(0), Decimal(0)), Profile())
+    seven = taxact_csv(ty).decode().splitlines()
+    six = taxact6_csv(ty).decode().splitlines()
+    assert seven[0].endswith("Reporting Category,Long/Short") and seven[1].endswith(",I,Short")
+    assert six[0].endswith("Reporting Category") and six[2].endswith(",L") and len(six) == len(seven)

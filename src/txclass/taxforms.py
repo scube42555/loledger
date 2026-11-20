@@ -548,12 +548,18 @@ def _csv_text(header: list[str], rows: list[list[str]]) -> bytes:
     return buf.getvalue().encode()
 
 
-def taxact_csv(ty: TaxYear) -> bytes:
-    return _csv_text(["Description", "Date Acquired", "Date Sold", "Sales Proceeds", "Cost or Other Basis",
-                      "Reporting Category", "Long/Short"],
+def taxact_csv(ty: TaxYear, term_column: bool = True) -> bytes:
+    """TaxAct crypto import. term_column=False gives the 6-column layout CoinLedger exports for TaxAct (the term
+    is implied by the reporting category); the 7th 'Long/Short' column suits importers that map columns."""
+    head = ["Description", "Date Acquired", "Date Sold", "Sales Proceeds", "Cost or Other Basis", "Reporting Category"]
+    return _csv_text(head + (["Long/Short"] if term_column else []),
                      [[ln.description, "Various" if ln.acquired == "VARIOUS" else ln.acquired, ln.sold,
-                       f"{_cents(ln.proceeds):.2f}", f"{_cents(ln.basis):.2f}", ln.box,
-                       "Short" if ln.term == "short" else "Long"] for ln in ty.lines])
+                       f"{_cents(ln.proceeds):.2f}", f"{_cents(ln.basis):.2f}", ln.box]
+                      + (["Short" if ln.term == "short" else "Long"] if term_column else []) for ln in ty.lines])
+
+
+def taxact6_csv(ty: TaxYear) -> bytes:
+    return taxact_csv(ty, term_column=False)
 
 
 def taxact_summary_csv(ty: TaxYear) -> bytes:
@@ -685,6 +691,9 @@ EXPORTS = [
            "schedule_1_{year}.pdf", lambda ty: _pdf_bytes(schedule_1_pdf(ty)[0])),
     Export("taxact", "software", "TaxAct (CSV)", "Gains and losses for TaxAct's crypto CSV import (max 2,000 "
            "lines).", "taxact_{year}.csv", taxact_csv),
+    Export("taxact6", "software", "TaxAct (CSV, 6 columns)", "The same lines in the 6-column layout CoinLedger "
+           "exports for TaxAct (no Long/Short column; the term follows from the reporting category).",
+           "taxact_{year}_6col.csv", taxact6_csv),
     Export("taxact_sum", "software", "TaxAct summary (CSV)", "One line per Form 8949 box and asset, for years over "
            "TaxAct's 2,000-line limit; attach the consolidated 8949.", "taxact_{year}_summary.csv", taxact_summary_csv),
     Export("turbotax", "software", "TurboTax (CSV)", "Digital-asset gains and losses in the 7-column statement "
@@ -778,7 +787,9 @@ def _readme(ty: TaxYear, out_dir: Path, notes: list[str], written: list[str]) ->
           "## Import files", "",
           "- `taxact_*.csv`: TaxAct 'Gain or loss on the sale of cryptocurrency' > CSV import (columns: Description, "
           "Date Acquired, Date Sold, Sales Proceeds, Cost or Other Basis, Reporting Category, Long/Short). Map the "
-          "columns in TaxAct's import screen and check the totals against Schedule D above.",
+          "columns in TaxAct's import screen and check the totals against Schedule D above. "
+          "`taxact_*_6col.csv` has the same lines without the Long/Short column (CoinLedger's TaxAct layout); "
+          "use whichever TaxAct's importer accepts, not both.",
           "- `turbotax_*.csv`: the 7-column digital-asset gain/loss layout (Name, Received date, Cost or other basis, "
           "Date sold, Proceeds, Number of units, Form 8949 box) used by TurboTax for uploaded statements. TurboTax's "
           "accepted formats change; verify after import.", ""]
