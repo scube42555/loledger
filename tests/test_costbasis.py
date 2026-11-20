@@ -99,3 +99,16 @@ def test_wallet_hifo_after_2025_picks_highest_unit_cost_within_the_wallet() -> N
             + sell("2025-04-01", "A", "2", "500"))
     res = Engine().run(legs)
     assert sorted(d.lot.cost for d in res.disposals) == [D(200), D(300)]
+
+
+def test_unpriced_token_redeemed_takes_the_residual_proceeds() -> None:
+    # LP token (no price) + 4 ADA sent, $75 of priced assets received: ADA keeps its $4, the LP token gets $71
+    t = "redeem"
+    legs = [leg("2025-01-02", "W", "ada", "10", "10", "SWAP", "exchange_trade", tx="b0"),
+            leg("2025-01-02", "W", "lp", "1000", None, "LP_DEPOSIT", "lp", tx="b0"),
+            leg("2025-02-01", "W", "lp", "-1000", None, "LP_WITHDRAW", "lp", tx=t),
+            leg("2025-02-01", "W", "ada", "-4", "4", "LP_WITHDRAW", "lp", tx=t),
+            leg("2025-02-01", "W", "meld", "5000", "75", "LP_WITHDRAW", "lp", tx=t)]
+    res = Engine().run(legs)
+    got = {d.fam: d.proceeds for d in res.disposals if d.tx == t}
+    assert got == {"ada": D(4), "lp": D(71)}

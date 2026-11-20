@@ -665,11 +665,22 @@ class Engine:
             value = sum((u or D0 for u in out_usd), D0)
         # disposals: proceeds share by FMV weight (or quantity when unpriced); fees reduce proceeds if nothing acquired
         out_items = [(lg.acct, lg.fam, -lg.amount, lg.usd) for lg in outs] + list(consumed)
-        proceeds_total = value - (fee_usd if not ins else D0)
+        proceeds_total = max(value - (fee_usd if not ins else D0), D0)
         wsum = sum((u or D0 for *_, u in out_items), D0)
+        unpriced = [x for x in out_items if not x[3]]
+        if unpriced and wsum and ins and all(u for u in in_usd):
+            # the received value is known: priced items keep their FMV, unpriced ones (e.g. an LP token being
+            # redeemed) take the rest, by quantity
+            priced_total = min(wsum, proceeds_total)
+            rest = proceeds_total - priced_total
+            uq = sum((x[2] for x in unpriced), D0)
+            for acct, fam, q, u in out_items:
+                p = priced_total * (u / wsum) if u else (rest * q / uq if uq else rest / len(unpriced))
+                self.dispose(g[0].ts, acct, fam, q, p, "trade", g[0].tx)
+            out_items = []
         for acct, fam, q, u in out_items:
             share = (u or D0) / wsum if wsum else Decimal(1) / len(out_items)
-            self.dispose(g[0].ts, acct, fam, q, max(proceeds_total, D0) * share, "trade", g[0].tx)
+            self.dispose(g[0].ts, acct, fam, q, proceeds_total * share, "trade", g[0].tx)
         basis_total = value + fee_usd if ins else D0
         isum = sum((u or D0 for u in in_usd), D0)
         for lg in ins:

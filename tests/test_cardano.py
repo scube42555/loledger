@@ -208,3 +208,19 @@ def test_epoch_rewards_booked_in_reward_account_and_withdrawal_is_internal() -> 
     rows = classify_cardano_wallet(S, moves, ctxs, ctx, state)
     assert [(r.classification, r.subtype, r.movement.amount) for r in rows] == [
         (Cls.INTERNAL_TRANSFER, "reward_withdrawal", Decimal(10))]
+
+
+def test_wallet_signed_relock_keeps_the_order_open() -> None:
+    # a token order re-locked by the wallet at the same script with the same tokens is an update, not a cancel
+    place = tx("o1", 1, [io("p1", 0, WALLET_ADDR, S, 10, {SNEK: 500})],
+               [io("o1", 0, ORDER_ADDR, None, 1.5, {SNEK: 500}, datum=True), io("o1", 1, WALLET_ADDR, S, 8.3)])
+    relock = tx("u1", 2, [io("o1", 0, ORDER_ADDR, None, 1.5, {SNEK: 500}), io("o1", 1, WALLET_ADDR, S, 8.3)],
+                [io("u1", 0, ORDER_ADDR, None, 1.5, {SNEK: 500}, datum=True), io("u1", 1, WALLET_ADDR, S, 5.6),
+                 io("u1", 2, BATCHER_ADDR, None, 2.5)])
+    cancel = tx("c1", 3, [io("u1", 0, ORDER_ADDR, None, 1.5, {SNEK: 500}), io("u1", 1, WALLET_ADDR, S, 5.6)],
+                [io("c1", 0, WALLET_ADDR, S, 6.9, {SNEK: 500})])
+    rows, _ = run([place, relock, cancel])
+    assert {(r.classification, r.subtype, r.leg_role) for r in rows if r.tx.tx_hash == "u1" and r.movement.source != "gas"} \
+        == {(Cls.OTHER, "order_updated", "fee")}
+    assert {(r.classification, r.linked_tx_hash) for r in rows if r.tx.tx_hash == "c1"} == {(Cls.ORDER_CANCELLED, "o1")}
+    assert {r.subtype for r in rows if r.tx.tx_hash == "o1"} == {"unknown:cancelled"}

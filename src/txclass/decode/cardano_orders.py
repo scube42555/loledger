@@ -68,6 +68,7 @@ class Order:
     fills: list[tuple[str, dict[str, Decimal]]] = field(default_factory=list)  # (tx, received per asset)
     settle_rows: list[Classified] = field(default_factory=list)
     order_id: str = ""
+    values: dict[str, str] = field(default_factory=dict)  # the order UTxO's assets (to recognise a re-lock)
 
 
 def order_kind(msg: str, script_kind: str | None) -> str:
@@ -296,7 +297,8 @@ def _place(wallet: str, tx: TxContext, legs: list[Movement], order_legs: list[Mo
         o = Order(ref=ref, wallet=wallet, placed_tx=tx.tx_hash, script_hash=so["script_hash"],
                   venue=protocol_name(msg, info.venue if info else None, so["script_hash"]), kind=kind, sold=sold,
                   datum_summary=summarize_datum(so.get("datum"), symbols), registered=info is not None,
-                  terms=decode(info.venue, so.get("datum")) if info else None, order_id=f"cardano:{ref}")
+                  terms=decode(info.venue, so.get("datum")) if info else None, order_id=f"cardano:{ref}",
+                  values=dict(so.get("values") or {}))
         for m in order_legs:
             if ref in m.utxo_ref.split(";") and m.source != "min_ada":
                 o.sold_amt[m.asset_id] = o.sold_amt.get(m.asset_id, Decimal(0)) - m.amount
@@ -333,6 +335,9 @@ def _settle(wallet: str, tx: TxContext, legs: list[Movement], spent: list[Order]
     minted: dict[str, int] = defaultdict(int)
     for mm in tx.meta.get("minted", []):
         minted[mm["asset"]] += int(mm["qty"])
+    relock = _relocked(spent, script_outputs) if sent else None
+    if relock:
+        return _relock(wallet, tx, legs, o0, relock, state)
     if continuation and not legs and not sent:
         cls, sub, outcome = Cls.ORDER_FILLED, "partial", "partial"
         reason = "partial match: order UTxO consumed and re-created at the same script (no payout yet)"
@@ -397,6 +402,40 @@ def _settle(wallet: str, tx: TxContext, legs: list[Movement], spent: list[Order]
                         settle_rows=o0.settle_rows, order_id=o0.order_id)
             state.orders[ref] = nxt
             state.all_orders.append(nxt)
+    return rows
+
+
+def _relocked(spent: list[Order], script_outputs: dict[str, Any]) -> str | None:
+    """A wallet-signed tx that spends one order and re-creates it at the same script with the same tokens is an
+    order update (some DEX UIs re-lock instead of cancelling): the order stays open at the new UTxO."""
+    if len(spent) != 1:
+        return None
+    o = spent[0]
+    toks = {a: q for a, q in o.values.items() if a != NATIVE_ASSET}
+    if not toks:
+        return None
+    for ref, so in script_outputs.items():
+        if so["script_hash"] == o.script_hash and \
+                {a: q for a, q in (so.get("values") or {}).items() if a != NATIVE_ASSET} == toks:
+            return ref
+    return None
+
+
+def _relock(wallet: str, tx: TxContext, legs: list[Movement], o: Order, ref: str, state: CardanoState) -> list[Classified]:
+    rows = []
+    for m in legs:
+        r = _row(m, tx, Cls.OTHER, "order_updated" if m.amount < 0 else "order_change",
+                 f"order {o.ref[:12]}… re-locked at {ref[:12]}… with the same assets (order update); placed in "
+                 f"{o.placed_tx[:10]}", protocol=o.venue, conf=1.0 if o.registered else 0.9,
+                 role="fee" if m.amount < 0 else "", linked=o.placed_tx)
+        r.order_id = o.order_id
+        rows.append(r)
+    state.orders.pop(o.ref, None)
+    nxt = Order(ref=ref, wallet=wallet, placed_tx=o.placed_tx, script_hash=o.script_hash, venue=o.venue, kind=o.kind,
+                sold=o.sold, datum_summary=o.datum_summary, registered=o.registered, rows=o.rows, terms=o.terms,
+                sold_amt=o.sold_amt, fills=o.fills, settle_rows=o.settle_rows, order_id=o.order_id, values=o.values)
+    state.orders[ref] = nxt
+    state.all_orders.append(nxt)
     return rows
 
 
