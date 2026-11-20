@@ -24,6 +24,22 @@
       {% endfor %}
       </tbody>
     </table>
+    <h3 class="sub">Capital loss carryover</h3>
+    <table class="t compact">
+      <thead><tr><th>Tax year</th><th class="r" title="Unused loss carried in from earlier years">Carried in</th>
+        <th class="r" title="Net loss deducted against other income (Schedule D line 21, up to $3,000)">Deducted</th>
+        <th class="r" title="Loss left over for the next year">Carried out</th></tr></thead>
+      <tbody>
+      {% for t in tax|reverse %}{% if t.carry_in or t.deducted or t.carry_out %}
+        <tr><td><a href="{{ url_for('tax', year=t.year) }}">{{ t.year }}</a></td>
+          <td class="r">{{ t.carry_in|money(cents=False) if t.carry_in else '—' }}</td>
+          <td class="r">{{ t.deducted|money(cents=False) if t.deducted else '—' }}</td>
+          <td class="r {{ 'neg' if t.carry_out }}">{{ t.carry_out|money(cents=False) if t.carry_out else '—' }}</td></tr>
+      {% endif %}{% else %}<tr><td colspan="4" class="muted">No capital loss carryover.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    <div class="muted small">Crypto-only estimate (IRS carryover worksheet, $3,000 yearly limit). Amounts from your filed returns
+      in tax_profile.yaml take precedence.</div>
   </section>
 </div>
 

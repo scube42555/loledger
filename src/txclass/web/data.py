@@ -17,7 +17,7 @@ from ..config import load_settings
 from ..costbasis import Engine, Result, load as load_legs
 from ..http import HttpClient
 from ..reconcile import family
-from ..taxforms import EXPORTS, Profile, TaxYear, build_year, year_notes
+from ..taxforms import EXPORTS, Profile, TaxYear, build_year, carryover_out, year_notes
 
 D0 = Decimal(0)
 PARKED = ("escrow:", "staked:", "deposit:", "xp-chain:", "vault:", "offlist:")
@@ -277,7 +277,9 @@ class AppData:
         flags = [f for f in self.res.flags if datetime.fromtimestamp(f.ts, UTC).year == year]
         return {"year": year, "st": st, "lt": lt, "total": st + lt, "income": ty.income_total, "cats": cats,
                 "gifts_in": gifts_in, "gifts_out": gifts_out, "series": series, "lines": len(ty.lines),
-                "sched_d": ty.sched_d, "carry_in": ty.carry_in, "flags": flags, "notes": year_notes(ty),
+                "sched_d": ty.sched_d, "carry_in": ty.carry_in, "carry_out": carryover_out(
+                    ty.sched_d["7"], ty.sched_d["15"], self.profile.loss_limit),
+                "deducted": -ty.sched_d.get("21", D0), "flags": flags, "notes": year_notes(ty),
                 "boxes": ty.box_totals(), "eoy_cost": sum((lot.cost for lots in ty.positions.values() for lot in lots), D0)}
 
     def export(self, year: int, key: str) -> tuple[str, bytes]:

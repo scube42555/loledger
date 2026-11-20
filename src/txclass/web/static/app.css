@@ -4,11 +4,16 @@
   --c1: #2563eb; --c2: #d97706; --warn-bg: #fff7ed; --warn-line: #fdba74; --chip: #eef2ff;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0f1218; --card: #171b23; --text: #e6e9ef; --muted: #9aa3b5; --line: #2a303c; --grid: #222833;
     --accent: #5b8def; --accent-text: #0b0e13; --pos: #4ade80; --neg: #fb923c;
     --c1: #5b8def; --c2: #f0b45a; --warn-bg: #2a1d10; --warn-line: #9a5a1a; --chip: #1f2740;
   }
+}
+:root[data-theme="dark"] {
+    --bg: #0f1218; --card: #171b23; --text: #e6e9ef; --muted: #9aa3b5; --line: #2a303c; --grid: #222833;
+    --accent: #5b8def; --accent-text: #0b0e13; --pos: #4ade80; --neg: #fb923c;
+    --c1: #5b8def; --c2: #f0b45a; --warn-bg: #2a1d10; --warn-line: #9a5a1a; --chip: #1f2740;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -57,6 +62,7 @@ footer { text-align: center; padding: 16px; }
 .input { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; padding: 6px 10px; font: inherit; }
 .inline { display: inline; } .stack { display: grid; gap: 10px; } .stack label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .notice { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+h3.sub { margin-top: 18px; }
 .check { padding-left: 18px; margin: 0; } .check li { margin-bottom: 8px; }
 .dl { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .modal { border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(680px, 94vw); background: var(--card); color: var(--text); }
@@ -78,3 +84,6 @@ footer { text-align: center; padding: 16px; }
   .top { flex-wrap: wrap; gap: 10px; padding: 10px 16px; } .refresh { margin-left: 0; } main { padding: 16px; }
   .t { display: block; overflow-x: auto; }
 }
+.theme { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.theme button { border: 0; background: var(--card); color: var(--muted); padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
+.theme button.on { background: var(--chip); color: var(--accent); }

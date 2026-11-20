@@ -71,7 +71,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         tax = []
         for y in data.years():
             s = data.year_summary(y)
-            tax.append({"year": y, "gains": s["total"], "income": s["income"]})
+            tax.append({"year": y, "gains": s["total"], "income": s["income"], "carry_in": sum(s["carry_in"]),
+                        "deducted": s["deducted"], "carry_out": sum(s["carry_out"])})
         return render_template("portfolio.html", a=a, account=account, accounts=data.accounts(), tax=tax,
                                history=data.history(), show_all=request.args.get("all") == "1")
 

@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Ledger{% endblock %} · Crypto ledger</title>
+<script>
+  try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
 </head>
@@ -21,6 +24,11 @@
     <a href="{{ url_for('da_list') }}" class="{{ 'on' if request.endpoint and request.endpoint.startswith('da_') }}">1099-DA</a>
   </nav>
   <form method="post" action="{{ url_for('refresh') }}" class="refresh">
+    <div class="theme" role="group" aria-label="Theme">
+      <button type="button" data-t="auto" onclick="setTheme('auto')" title="Follow the system setting">Auto</button>
+      <button type="button" data-t="light" onclick="setTheme('light')">Light</button>
+      <button type="button" data-t="dark" onclick="setTheme('dark')">Dark</button>
+    </div>
     <span class="muted small">Computed {{ loaded.strftime('%b %d, %H:%M') }} UTC · {{ methods[0]|upper }} / per-wallet {{ methods[1]|upper }}</span>
     <button class="btn">↻ Refresh data</button>
   </form>
@@ -30,6 +38,12 @@
 </main>
 <footer class="muted small">Computed locally from classified.csv and manual.yaml. Prices: DefiLlama. Not tax advice.</footer>
 <script>
+function setTheme(t) {
+  try { t === 'auto' ? localStorage.removeItem('theme') : localStorage.setItem('theme', t); } catch (e) {}
+  location.reload();  // charts read the colours when drawn
+}
+(() => { let t = 'auto'; try { t = localStorage.getItem('theme') || 'auto'; } catch (e) {}
+  document.querySelectorAll('.theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); })();
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function lineChart(el, labels, sets, opts = {}) {
   return new Chart(el, {type: 'line', data: {labels, datasets: sets.map(s => ({
