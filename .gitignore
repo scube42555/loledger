@@ -1,0 +1,30 @@
+.env
+.venv/
+data/
+*.sqlite
+*.sqlite-*
+__pycache__/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+classified*
+movements*.csv
+# wallet exports / key material (private)
+eternl-*
+.~lock.*
+
+# exchange exports / API data (private)
+exports/
+coinledger_comparison*
+reconcile*.md
+holdings*.csv
+basis/
+tax/
+tax_profile.yaml
+data/1099da/
+
+# personal data: real wallet list, user-confirmed facts, tax profile (examples: *.example.*)
+addresses.csv
+overrides.yaml
+manual.yaml
+exchange_deposits.yaml

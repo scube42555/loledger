@@ -1,0 +1,15 @@
+# User-confirmed events on chains whose history cannot be fetched (copy to manual.yaml, which is git-ignored).
+# Read by `classify basis` / `tax` / `serve`; each entry becomes one leg: date (UTC), chain, wallet, token,
+# amount (signed), usd (FMV of the leg), classification (default TRANSFER), subtype (as in classified.csv),
+# optional price_id (DefiLlama id, for live prices in the web app) and a note.
+- date: "2024-04-12 13:05:00"
+  chain: Cosmos
+  wallet: cosmos1exampleexampleexampleexampleexample
+  token: ATOM
+  amount: "100"
+  usd: "1000.00"
+  subtype: exchanger_swap_in
+  note: "ATOM received from a cross-chain swap"
+- {date: "2026-01-21 02:08:15", chain: Solana, wallet: ExampleSolanaWa11etAddressXXXXXXXXXXXXXXX, token: SKR,
+   amount: "10000", usd: "68.93", classification: OTHER, subtype: airdrop,
+   price_id: "solana:SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3", note: "airdrop claimed and staked in one tx"}

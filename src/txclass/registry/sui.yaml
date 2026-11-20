@@ -1,0 +1,26 @@
+# Sui registry: Move packages (tx "to" = the first non-framework package called) and canonical coins.
+# Identified 2026-11-18 from the user's Slush wallet history (module names + emitted events).
+tokens:
+  "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC": USDC
+  "0xdeeb7a4662eec9f2f3def03fb937a663dddaa2e215b8078a284d026b7946c270::deep::DEEP": DEEP
+  "0xd0e89b2af5e4910726fbcd8b8dd37bb79b29e5f83f7491bca830e94f7f226d29::eth::ETH": ETH
+
+contracts:
+  "0x533fab9a116080e2cb1c87f1832c1bf4231ab4c32318ced041e75cc28604bba9": {name: DeepTrade limit_order, kind: order_book, protocol: deeptrade}
+  "0xc10d536b6580d809711b9bb8eee3945d5e96f92a346c84d74ff7a0697e664695": {name: DeepTrade dt_order/fee_manager, kind: order_book, protocol: deeptrade}
+  "0x624a80998bfca8118a794c71cccca771c351158eecd425661e07056f4ed94683": {name: DeepTrade deepbookv3_utils, kind: order_book, protocol: deeptrade}
+  "0x337f4f4f6567fcd778d5454f27c16c70e2f274cc6377ea6249ddf491482ef497": {name: DeepBook balance_manager, kind: order_book, protocol: deepbook-v3}
+  "0x0e735f8c93a95722efd73521aca7a7652c0bb71ed1daf41b26dfd7d1ff71f748": {name: DeepBook balance_manager, kind: order_book, protocol: deepbook-v3}
+  "0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357661df5d3204809": {name: DeepBook v3, kind: order_book, protocol: deepbook-v3}
+  "0xf9c6f78322ed667909e05f6b42b2f5a67af6297503c905335e02a15148e9440d": {name: aggregator (cetus/turbos adapters), kind: router, protocol: sui-aggregator}
+  "0x3fb42ddf908af45f9fc3c59eab227888ff24ba2e137b3b55bf80920fd47e11af": {name: aggregator (cetus adapter), kind: router, protocol: sui-aggregator}
+  "0x3864c7c59a4889fec05d1aae4bc9dba5a0e0940594b424fbed44cb3f6ac4c032": {name: aggregator (cetus adapter), kind: router, protocol: sui-aggregator}
+  "0xf2fcea41dc217385019828375764fa06d9bd25e8e4726ba1962680849fb8d613": {name: aggregator (bluefin adapter), kind: router, protocol: sui-aggregator}
+  "0x8093d002bba575f1378b0da206a8df1fc55c4b5b3718752304f1b67a505d2be4": {name: aggregator (bluefin adapter), kind: router, protocol: sui-aggregator}
+  "0x39402d188b7231036e52266ebafad14413b4bf3daea4ac17115989444e6cd516": {name: aggregator (bluefin adapter), kind: router, protocol: sui-aggregator}
+  "0x2485feb9d42c7c3bcb8ecde555ad40f1b073d9fb4faf354fa2d30a0b183a23ce": {name: aggregator utils, kind: router, protocol: sui-aggregator}
+  "0x8ae871505a80d8bf6bf9c05906cda6edfeea460c85bebe2e26a4313f5e67874a": {name: FlowX CLMM, kind: router, protocol: flowx}
+  "0x000000000000000000000000000000000000000000000000000000000000000b": {name: Sui Bridge, kind: bridge, protocol: sui-bridge}
+
+price_aliases:
+  "0xd0e89b2af5e4910726fbcd8b8dd37bb79b29e5f83f7491bca830e94f7f226d29::eth::ETH": "coingecko:ethereum"   # Sui Bridge ETH

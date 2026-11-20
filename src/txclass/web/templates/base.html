@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Ledger{% endblock %} · Crypto ledger</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+<script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="{{ url_for('portfolio') }}"><span class="mark">◆</span> Crypto ledger</a>
+  <nav>
+    <a href="{{ url_for('portfolio') }}" class="{{ 'on' if request.endpoint == 'portfolio' }}">Portfolio</a>
+    <details class="menu {{ 'on' if request.endpoint == 'tax' }}">
+      <summary>Tax reports</summary>
+      <div class="menu-list">
+        {% for y in years %}<a href="{{ url_for('tax', year=y) }}">{{ y }} tax report</a>{% endfor %}
+      </div>
+    </details>
+    <a href="{{ url_for('da_list') }}" class="{{ 'on' if request.endpoint and request.endpoint.startswith('da_') }}">1099-DA</a>
+  </nav>
+  <form method="post" action="{{ url_for('refresh') }}" class="refresh">
+    <span class="muted small">Computed {{ loaded.strftime('%b %d, %H:%M') }} UTC · {{ methods[0]|upper }} / per-wallet {{ methods[1]|upper }}</span>
+    <button class="btn">↻ Refresh data</button>
+  </form>
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+<footer class="muted small">Computed locally from classified.csv and manual.yaml. Prices: DefiLlama. Not tax advice.</footer>
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function lineChart(el, labels, sets, opts = {}) {
+  return new Chart(el, {type: 'line', data: {labels, datasets: sets.map(s => ({
+      label: s.label, data: s.data, borderColor: css(s.color), backgroundColor: css(s.color),
+      borderWidth: 2, pointRadius: 0, tension: 0.15, borderDash: s.dash || [], stepped: s.stepped || false}))},
+    options: {responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false},
+      plugins: {legend: {display: sets.length > 1, labels: {color: css('--muted'), boxWidth: 10}},
+        tooltip: {callbacks: {label: c => `${c.dataset.label}: $${c.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 0})}`}}},
+      scales: {x: {ticks: {color: css('--muted'), maxTicksLimit: 8}, grid: {display: false}},
+               y: {ticks: {color: css('--muted'), callback: v => '$' + Number(v).toLocaleString()}, grid: {color: css('--grid')}}},
+      ...opts}});
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

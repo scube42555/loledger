@@ -1,0 +1,64 @@
+# Avalanche C-Chain registry. Addresses are lowercased on load.
+#
+# tokens: canonical token contracts. Any other contract whose symbol looks like one of these
+#         symbols is treated as a spoof (spam/fake_token).
+# contracts: kind is one of
+#   router | settlement | fee_recipient | order_book | escrow | lp_pool | lp_nft | lb_pair |
+#   wrapper | bridge | bridge_token | yield_vault | staking | spam_distributor
+#   order_book/escrow -> outflow with nothing back is ORDER_PLACED
+#   yield_vault       -> OTHER/yield_deposit|yield_withdraw (tracked as a position later)
+
+tokens:
+  "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7": WAVAX
+  "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e": USDC
+  "0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664": USDC.e
+  "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7": USDt
+  "0xc7198437980c041c805a1edcba50c1ce5db95118": USDT.e
+  "0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab": WETH.e
+  "0x5947bb275c521040051d82396192181b413227a3": LINK.e
+  "0x152b9d0fdc40c096757f570a51e494bd4b943e50": BTC.b
+
+contracts:
+  "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7": {name: WAVAX, kind: wrapper, protocol: wavax}
+  "0xdef171fe48cf0115b1d80b88dc8eab59176fee57": {name: AugustusSwapper v5, kind: router, protocol: paraswap}
+  "0x6a000f20005980200259b80c5102003040001068": {name: AugustusV6, kind: router, protocol: paraswap}
+  "0x6131b5fae19ea4f9d964eac0408e4408b66337b5": {name: MetaAggregationRouterV2, kind: router, protocol: kyberswap}
+  "0x1a1ec25dc08e98e5e93f1104b5e5cdd298707d31": {name: MetaSwap router, kind: router, protocol: metamask-swaps}
+  "0xc590175e458b83680867afd273527ff58f74c02b": {name: MetaSwap Spender, kind: router, protocol: metamask-swaps}
+  "0x3434241a01359a2c3253686d6ddb046481a6eab5": {name: unverified swap router (SwapExecuted), kind: router, protocol: unidentified-router-3434}
+  "0xfa85ebd53352a106927c11cdbc4bb1b984fcb061": {name: TangemAaveV3YieldModule, kind: yield_vault, protocol: tangem-aave-v3}
+  "0xa6a01f4b494243d84cf8030d982d7eeb2aecd329": {name: AllocationStaking, kind: staking, protocol: allocation-staking}
+  "0x6c70f11a949ca1241ed77048067d60bbb935e379": {name: MassTokenTransferOptimized, kind: spam_distributor, protocol: spam}
+  # KyberSwap Limit Orders (signed, gasless): DSLOProtocol emits the fill events; keepers submit
+  # fills through arbitrary routers (Kyber, LI.FI, Instadapp, ...). The unverified contracts below
+  # are Kyber executors that receive the maker's principal and return the output; ~0.1% goes to
+  # the fee recipient. Identified 2026-11-18: all 60 third-party fill txs emit DSLOProtocol logs.
+  "0xcab2fa2eeab7065b45cbcf6e3936dde2506b4f6c": {name: DSLOProtocol, kind: limit_order_protocol, protocol: kyberswap-limit-order}
+  "0xf081470f5c6fbccf48cc4e5b82dd926409dcdd67": {name: Kyber LO executor, kind: settlement, protocol: kyberswap-limit-order}
+  "0x0f4a1d7fdf4890be35e71f3e0bbc4a0ec377eca3": {name: Kyber LO executor, kind: settlement, protocol: kyberswap-limit-order}
+  "0x6e4141d33021b52c91c28608403db4a0ffb50ec6": {name: Kyber LO executor, kind: settlement, protocol: kyberswap-limit-order}
+  "0x22e22081ce77d1a1fcf4acfbc3019c8ba3e5f447": {name: Kyber LO executor, kind: settlement, protocol: kyberswap-limit-order}
+  "0x1cf9c14366fdb9631b0ff27e7a9e1d4ccc84b080": {name: Kyber LO executor proxy, kind: settlement, protocol: kyberswap-limit-order}
+  "0x4f82e73edb06d29ff62c91ec8f5ff06571bdeb29": {name: Kyber LO fee recipient, kind: fee_recipient, protocol: kyberswap-limit-order}
+  # Gelato limit orders (escrow): ERC20OrderRouter forwards the input to a per-order vault address
+  # (shows as an EOA). Cancel/fill go through GelatoPineCore and empty that vault.
+  "0x3441456d5750f4a22b0dcbd434d99b97455b70ac": {name: ERC20OrderRouter, kind: order_router, protocol: gelato-limit-order}
+  "0x0c30d3d66bc7c73a83fda929888c34dcb24fd599": {name: GelatoPineCore, kind: order_book, protocol: gelato-limit-order}
+  "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae": {name: LiFiDiamond, kind: bridge, protocol: lifi}
+  "0x111111125421ca6dc452d289314280a0f8842a65": {name: AggregationRouterV6, kind: router, protocol: 1inch}
+  # Batch payout contract (transferEther(address[],uint256[])) called by a hot wallet with ~24k txs:
+  # exchange-style withdrawals to wallet 1 in April 2024. Identified as Gemini: its payouts are Gemini AVAX/ETH withdrawals by tx hash (2026-11-18).
+  "0xd24400ae8bfebb18ca49be86258a3c749cf46853": {name: Gemini hot wallet, kind: exchange, protocol: gemini}
+  "0x5f65f7b609678448494de4c87521cdf6cef1e932": {name: Gemini withdrawal payout (transferEther batch), kind: exchange, protocol: gemini}
+
+# Fallback price ids (used only when DefiLlama has no price for the token address itself).
+# Bridged tokens track their L1 asset 1:1.
+price_aliases:
+  "0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab": "coingecko:ethereum"     # WETH.e
+  "0x5947bb275c521040051d82396192181b413227a3": "coingecko:chainlink"    # LINK.e
+  "0xc7198437980c041c805a1edcba50c1ce5db95118": "coingecko:tether"       # USDT.e
+  "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7": "coingecko:tether"       # USDt
+  "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e": "coingecko:usd-coin"     # USDC
+  "0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664": "coingecko:usd-coin"     # USDC.e
+  "0x152b9d0fdc40c096757f570a51e494bd4b943e50": "coingecko:bitcoin"      # BTC.b
+  "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7": "coingecko:avalanche-2"  # WAVAX

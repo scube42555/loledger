@@ -1,0 +1,45 @@
+# Ethereum mainnet registry (same schema as evm_avalanche.yaml). Addresses are lowercased on load.
+tokens:
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": WETH
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": USDC
+  "0xdac17f958d2ee523a2206206994597c13d831ec7": USDT
+  "0x6b175474e89094c44da98b954eedeac495271d0f": DAI
+  "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599": WBTC
+  "0x514910771af9ca656af840dff83e8264ecf986ca": LINK
+  "0xae7ab96520de3a18e5e111b5eaab095312d7fe84": stETH
+
+contracts:
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {name: WETH9, kind: wrapper, protocol: weth}
+  "0x00000000219ab540356cbb839cbe05303d7705fa": {name: Beacon deposit contract, kind: staking, protocol: eth2-staking}
+  "0xae7ab96520de3a18e5e111b5eaab095312d7fe84": {name: Lido stETH, kind: router, protocol: lido}
+  "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {name: UniswapV2Router02, kind: router, protocol: uniswap-v2}
+  "0xe592427a0aece92de3edee1f18e0157c05861564": {name: SwapRouter, kind: router, protocol: uniswap-v3}
+  "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": {name: SwapRouter02, kind: router, protocol: uniswap-v3}
+  "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad": {name: UniversalRouter, kind: router, protocol: uniswap}
+  "0x66a9893cc07d91d95644aedd05d03f95e1dba8af": {name: UniversalRouter v4, kind: router, protocol: uniswap}
+  "0xc36442b4a4522e871399cd717abdd847ab11fe88": {name: NonfungiblePositionManager, kind: lp_nft, protocol: uniswap-v3}
+  "0x111111125421ca6dc452d289314280a0f8842a65": {name: AggregationRouterV6, kind: router, protocol: 1inch}
+  "0x1111111254eeb25477b68fb85ed929f73a960582": {name: AggregationRouterV5, kind: router, protocol: 1inch}
+  "0xdef1c0ded9bec7f1a1670819833240f027b25eff": {name: 0x Exchange Proxy, kind: router, protocol: 0x}
+  "0x9008d19f58aabd9ed0d60971565aa8510560ab41": {name: GPv2Settlement, kind: settlement, protocol: cow-swap}
+  "0xdef171fe48cf0115b1d80b88dc8eab59176fee57": {name: AugustusSwapper v5, kind: router, protocol: paraswap}
+  "0x6a000f20005980200259b80c5102003040001068": {name: AugustusV6, kind: router, protocol: paraswap}
+  "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae": {name: LiFiDiamond, kind: bridge, protocol: lifi}
+  "0xda3bd1fe1973470312db04551b65f401bc8a92fd": {name: Sui Bridge, kind: bridge, protocol: sui-bridge}
+  "0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef": {name: Arbitrum L1 Gateway Router, kind: bridge, protocol: arbitrum-bridge}
+  "0xa3a7b6f88361f48403514059f1f16c8e78d60eec": {name: Arbitrum L1 ERC20 Gateway, kind: bridge, protocol: arbitrum-bridge}
+  "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f": {name: Arbitrum Delayed Inbox, kind: bridge, protocol: arbitrum-bridge}
+  "0x46b2deae6eff3011008ea27ea36b7c27255ddfa9": {name: wethDYDX migration bridge, kind: bridge, protocol: dydx-bridge}
+  # same exchange-style batch payout contract/hot wallet seen on Avalanche (transferEther(address[],uint256[]))
+  "0xd24400ae8bfebb18ca49be86258a3c749cf46853": {name: Gemini hot wallet, kind: exchange, protocol: gemini}
+  "0x5f65f7b609678448494de4c87521cdf6cef1e932": {name: Gemini withdrawal payout (transferEther batch), kind: exchange, protocol: gemini}
+  # MEV block builders: their last-tx-of-block payment to the proposer's fee recipient is a proposer reward
+  "0x95222290dd7278aa3ddd389cc1e1d165cc4bafe5": {name: beaverbuild, kind: mev_builder, protocol: mev-boost}
+  "0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97": {name: Titan Builder, kind: mev_builder, protocol: mev-boost}
+  "0x1f9090aae28b8a3dceadf281b0f12828e676c326": {name: rsync-builder, kind: mev_builder, protocol: mev-boost}
+  "0xdafea492d9c6733ae3d56b7ed1adb60692c98bc5": {name: Flashbots builder, kind: mev_builder, protocol: mev-boost}
+  "0x690b9a9e9aa1c9db991c7721a92d351db4fac990": {name: builder0x69, kind: mev_builder, protocol: mev-boost}
+
+price_aliases:
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "coingecko:ethereum"
+  "0xae7ab96520de3a18e5e111b5eaab095312d7fe84": "coingecko:staked-ether"

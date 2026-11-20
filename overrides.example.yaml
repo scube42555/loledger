@@ -1,0 +1,26 @@
+# User-confirmed facts applied after classification (copy to overrides.yaml, which is git-ignored).
+# Each rule matches rows by `chain` plus any of tx_hash / tx_hashes / counterparty / wallet
+# (optional: direction in|out, only_classification, token) and sets classification, subtype and reason
+# (optionally linked_tx_hash, order_id, leg_role). Matched rows get confidence 1.0; the reason is prefixed
+# with "user-confirmed:". Quote hashes: YAML reads an unquoted 0x... value as a number.
+- chain: Ethereum
+  tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000001"
+  direction: out
+  classification: OTHER
+  subtype: payment
+  reason: "card top-up for a purchase"
+- chain: Bitcoin
+  counterparty: bc1qexamplegiversaddressxxxxxxxxxxxxxxxxxx
+  direction: in
+  classification: OTHER
+  subtype: gift_received
+  reason: "gift from a family member"
+- chain: Solana
+  tx_hash: "ExampleSignature1111111111111111111111111111111111111111111111111111111111111111111"
+  direction: in
+  token: LP_TOKEN
+  classification: ORDER_FILLED
+  subtype: "lp_add:lp_minted"
+  leg_role: in
+  linked_tx_hash: "ExamplePlacementSignature11111111111111111111111111111111111111111111111111111111"
+  reason: "LP tokens for the deposit order placed earlier"

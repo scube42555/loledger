@@ -1,0 +1,8 @@
+Address,Chain,Label
+0x1111111111111111111111111111111111111111,Ethereum,ETH main
+0x1111111111111111111111111111111111111111,Arbitrum,ETH main (Arbitrum)
+0x2222222222222222222222222222222222222222,Avalanche,AVAX hardware wallet
+bc1qexampleexampleexampleexampleexample0,Bitcoin,BTC cold wallet
+addr1qexample...,Cardano,ADA wallet
+ExampleSolanaWa11etAddressXXXXXXXXXXXXXXX,Solana,SOL main
+0x3333333333333333333333333333333333333333,Ethereum,Alice Gift

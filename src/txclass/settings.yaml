@@ -1,0 +1,234 @@
+# Chain configuration. Keys are canonical chain names; addresses.csv "Chain" values are
+# matched case-insensitively against the name, its aliases, or the numeric chain id.
+db_path: data/txclass.sqlite
+
+# Heuristic matching (phase 5). See src/txclass/match.py for the meaning of each knob.
+matching:
+  min_usd: 5.0               # ignore dust flows
+  window_hours: 72           # max gap for exchanger swaps / bridges
+  order_window_days: 30      # max gap between an unresolved order and its candidate fill
+  expected_ratio: 0.98       # usd_in / usd_out expected after fees
+  value_tolerance: 0.08      # |ratio - expected| at which the value score reaches 0
+  time_tau_hours: 2          # time-decay constant for swaps/bridges
+  order_time_tau_hours: 72
+  weights: {value: 0.55, time: 0.25, kind: 0.20}
+  min_score: 0.6
+  conf_base: 0.5             # confidence = conf_base + conf_span * score (always < 1.0)
+  conf_span: 0.45
+
+chains:
+  Avalanche:
+    price_chain: avax            # DefiLlama coin prefix
+    native_price_id: "coingecko:avalanche-2"
+    kind: evm
+    aliases: [avax, avalanche c-chain, c-chain]
+    chain_id: 43114
+    native_symbol: AVAX
+    native_decimals: 18
+    wrapped_native: "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7"
+    explorer: routescan          # Etherscan V2 free tier does not serve 43114
+    explorer_rps: 2
+    rpc_url: https://api.avax.network/ext/bc/C/rpc
+    rpc_rps: 4
+    atomic_reconcile: true       # C<->X/P imports/exports are not EVM txs; found via balancehistory
+  Ethereum:
+    price_chain: ethereum            # DefiLlama coin prefix
+    native_price_id: "coingecko:ethereum"
+    kind: evm
+    aliases: [eth, mainnet, ethereum mainnet]
+    chain_id: 1
+    native_symbol: ETH
+    native_decimals: 18
+    wrapped_native: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+    explorer: routescan          # verified 2026-11-18: all account endpoints + balancehistory on chain 1
+    beacon_withdrawals: true     # consensus-layer withdrawals are not txs; fetched from Etherscan (needs key)
+    explorer_rps: 2
+    rpc_url: https://eth.drpc.org      # publicnode is pruned: null receipts for older txs (2026-11-18)
+    rpc_batch: 3                 # drpc free plan on Ethereum: max 3 calls per batch
+    rpc_rps: 4
+  Base:
+    price_chain: base            # DefiLlama coin prefix
+    native_price_id: "coingecko:ethereum"
+    kind: evm
+    aliases: []
+    chain_id: 8453
+    native_symbol: ETH
+    native_decimals: 18
+    wrapped_native: "0x4200000000000000000000000000000000000006"
+    explorer: etherscan          # Routescan: "chain not supported"; Etherscan free tier excludes Base (paid key)
+    explorer_rps: 2
+    rpc_url: https://mainnet.base.org
+    rpc_rps: 4
+  Polygon:
+    kind: evm
+    price_chain: polygon
+    native_price_id: "coingecko:matic-network"
+    aliases: [matic, polygon pos, pol]
+    chain_id: 137
+    native_symbol: POL
+    native_decimals: 18
+    wrapped_native: "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"
+    explorer: etherscan          # Routescan does not serve 137; untested
+    explorer_rps: 3
+    rpc_url: https://polygon.drpc.org   # publicnode refused connections on 2026-11-18
+    rpc_batch: 10                # drpc free plan: max 10 calls per batch
+    rpc_rps: 4
+  Arbitrum:
+    price_chain: arbitrum            # DefiLlama coin prefix
+    native_price_id: "coingecko:ethereum"
+    kind: evm
+    aliases: [arbitrum one, arb]
+    chain_id: 42161
+    native_symbol: ETH
+    native_decimals: 18
+    wrapped_native: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
+    explorer: etherscan
+    explorer_rps: 3
+    rpc_url: https://arb1.arbitrum.io/rpc
+    rpc_rps: 4
+  Solana:
+    kind: solana
+    aliases: [sol]
+    chain_id: null
+    native_symbol: SOL
+    native_decimals: 9
+    price_chain: solana
+    native_price_id: "coingecko:solana"
+    rpc_url: https://api.mainnet-beta.solana.com
+    rpc_rps: 2
+    dust_native: "0.00001"       # 49 unsolicited ≤10,000-lamport inflows from repeat spammers seen
+  Sui:
+    kind: sui
+    aliases: []
+    chain_id: null
+    native_symbol: SUI
+    native_decimals: 9
+    price_chain: sui
+    native_price_id: "coingecko:sui"
+    rpc_rps: 1                   # public GraphQL (graphql.mainnet.sui.io) is rate-limited per minute
+  Algorand:
+    kind: algorand
+    aliases: [algo]
+    chain_id: null
+    native_symbol: ALGO
+    native_decimals: 6
+    price_chain: algorand
+    native_price_id: "coingecko:algorand"
+    rpc_rps: 5                   # Algonode public indexer, keyless
+    dust_native: "0.001"         # phishing/warning spam arrives as 0.0001 / 0.000013 ALGO
+  Injective:
+    kind: injective
+    aliases: [inj]
+    chain_id: null
+    native_symbol: INJ
+    native_decimals: 18
+    price_chain: injective
+    native_price_id: "coingecko:injective-protocol"
+    rpc_rps: 3                   # official explorer API + LCD, keyless
+    dust_native: "0.000001"      # MultiSend airdrops of 1e-18 INJ seen
+  Hedera:
+    kind: hedera
+    aliases: [hbar]
+    chain_id: null
+    native_symbol: HBAR
+    native_decimals: 8
+    price_chain: hedera
+    native_price_id: "coingecko:hedera-hashgraph"
+    rpc_rps: 5                   # public mirror node, keyless
+    dust_native: "0.001"         # 0.0001 / 1e-8 HBAR unsolicited dust seen
+  Chia:
+    kind: chia
+    aliases: [xch]
+    chain_id: null
+    native_symbol: XCH
+    native_decimals: 12
+    native_price_id: "coingecko:chia"
+    rpc_rps: 3                   # coinset.org public full-node RPC, keyless
+  Bitcoin:
+    kind: utxo
+    aliases: [btc]
+    chain_id: null
+    native_symbol: BTC
+    native_decimals: 8
+    native_price_id: "coingecko:bitcoin"
+    explorer: mempool            # mempool.space Esplora API, keyless
+    explorer_rps: 2
+  Doge:
+    kind: utxo
+    aliases: [dogecoin]
+    chain_id: null
+    native_symbol: DOGE
+    native_decimals: 8
+    native_price_id: "coingecko:dogecoin"
+    explorer: blockcypher        # free tier: 3 req/s, 100 req/h
+    explorer_rps: 1
+  Kaspa:
+    kind: utxo
+    aliases: [kas]
+    chain_id: null
+    native_symbol: KAS
+    native_decimals: 8
+    native_price_id: "coingecko:kaspa"
+    explorer: kaspa              # api.kaspa.org, keyless
+    explorer_rps: 2
+  Crypto.com:
+    kind: exchange               # Crypto.com Exchange account via API (CRYPTOCOM_API_KEY / _SECRET)
+    aliases: [cryptocom, crypto.com exchange]
+    chain_id: null
+    native_symbol: USD
+    native_decimals: 2
+    history_start: "2024-01-01"
+  MEXC:
+    kind: exchange               # file export (exports/mexc/*spot|deposit|withdraw|transfer|contract.csv)
+    aliases: [mexc global]
+    chain_id: null
+    native_symbol: USD
+    native_decimals: 2
+    export: exports/mexc
+    parser: mexc
+    tz_hours: 8                  # export times are UTC+8: 23 tx-hash-linked transfers sit 7.94–8.02 h after chain time
+                                 # website history downloads are UTC-4 (TxID-linked rows sit exactly 4 h before chain time)
+  Gemini:
+    kind: exchange               # file export (exports/gemini/transaction_history.csv), times in UTC
+    aliases: []
+    chain_id: null
+    native_symbol: USD
+    native_decimals: 2
+    export: exports/gemini/transaction_history.csv
+    parser: gemini
+    credit_subtype: staking_reward   # bare "Deposit" credits without tx hash: user-confirmed staking rewards
+  OKX:
+    kind: exchange               # zip/CSV exports (trading + funding history), times UTC0 per header
+    aliases: []
+    chain_id: null
+    native_symbol: USD
+    native_decimals: 2
+    export: exports/okx
+    parser: okx
+    # deposit addresses of your own account: put them in exchange_deposits.yaml (git-ignored)
+  Binance.US:
+    kind: exchange               # 'Transaction Tax Report' CSVs (no on-chain tx hashes)
+    aliases: [binance us, binanceus]
+    chain_id: null
+    native_symbol: USD
+    native_decimals: 2
+    export: exports/binance.us
+    parser: binanceus
+  Coinbase:
+    kind: exchange               # user-made CSV of deposits (Date,Type,From Label,Amount,Asset); local time
+    aliases: []
+    chain_id: null
+    native_symbol: USD
+    native_decimals: 2
+    export: exports/coinbase/deposits.csv
+    parser: coinbase_manual
+  Cardano:
+    price_chain: cardano            # DefiLlama coin prefix
+    native_price_id: "coingecko:cardano"
+    kind: cardano            # adapter arrives in phase 3; rows are validated and skipped until then
+    aliases: [ada]
+    chain_id: null
+    native_symbol: ADA
+    native_decimals: 6
+    explorer: koios
+    explorer_rps: 1.5          # public tier works without a key; KOIOS_API_KEY raises limits

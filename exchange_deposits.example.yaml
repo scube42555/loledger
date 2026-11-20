@@ -1,0 +1,4 @@
+# Your own deposit addresses at exchanges whose exports carry no on-chain tx hashes (copy to
+# exchange_deposits.yaml, which is git-ignored). Sends from your wallets to these addresses are linked
+# to the exchange's deposit records.
+OKX: ["0x0000000000000000000000000000000000000000"]

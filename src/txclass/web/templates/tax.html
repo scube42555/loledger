@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ s.year }} tax report{% endblock %}
+{% block body %}
+<div class="head-row">
+  <h1>{{ s.year }} Tax Report</h1>
+  <span class="muted">Jan 1, {{ s.year }} – Dec 31, {{ s.year }}</span>
+  <button class="btn primary right" onclick="document.getElementById('export').showModal()">⇩ Export</button>
+</div>
+{% for n in s.notes %}<div class="notice">{{ n }}</div>{% endfor %}
+<div class="grid-2">
+  <div>
+    <section class="card">
+      <div class="kpis">
+        <div><div class="kpi {{ 'pos' if s.total >= 0 else 'neg' }}">{{ s.total|money(cents=False) }}</div><div class="muted small"><span class="dot mv"></span>Capital gains</div></div>
+        <div><div class="kpi">{{ s.income|money }}</div><div class="muted small">Total income</div></div>
+        <div><div class="kpi">{{ s.lines }}</div><div class="muted small">Form 8949 lines</div></div>
+      </div>
+      <div class="chart"><canvas id="gains"></canvas></div>
+    </section>
+    <section class="card">
+      <h3>Summary</h3>
+      <div class="grid-2 tight">
+        <table class="t compact">
+          <thead><tr><th colspan="2">Capital gains</th></tr></thead>
+          <tr><td>Short term</td><td class="r {{ 'pos' if s.st >= 0 else 'neg' }}">{{ s.st|money }}</td></tr>
+          <tr><td>Long term</td><td class="r {{ 'pos' if s.lt >= 0 else 'neg' }}">{{ s.lt|money }}</td></tr>
+          <tr class="tot"><td>Total</td><td class="r">{{ s.total|money }}</td></tr>
+          <tr><td colspan="2">&nbsp;</td></tr>
+          <thead><tr><th colspan="2">Schedule D</th></tr></thead>
+          {% if s.carry_in[0] or s.carry_in[1] %}<tr><td>Loss carryover in (ST / LT)</td><td class="r">{{ s.carry_in[0]|money }} / {{ s.carry_in[1]|money }}</td></tr>{% endif %}
+          <tr><td>Line 7 net short-term</td><td class="r">{{ s.sched_d['7']|money }}</td></tr>
+          <tr><td>Line 15 net long-term</td><td class="r">{{ s.sched_d['15']|money }}</td></tr>
+          <tr class="tot"><td>Line 16</td><td class="r">{{ s.sched_d['16']|money }}</td></tr>
+          {% if s.sched_d.get('21') %}<tr><td>Line 21 deductible loss</td><td class="r">{{ s.sched_d['21']|money }}</td></tr>{% endif %}
+          <tr><td colspan="2">&nbsp;</td></tr>
+          <thead><tr><th colspan="2">Other</th></tr></thead>
+          <tr><td>Gifts received (FMV)</td><td class="r">{{ s.gifts_in|money }}</td></tr>
+          <tr><td>Gifts sent (FMV)</td><td class="r">{{ s.gifts_out|money }}</td></tr>
+          <tr><td>End-of-year cost basis</td><td class="r">{{ s.eoy_cost|money }}</td></tr>
+        </table>
+        <table class="t compact">
+          <thead><tr><th colspan="2">Taxable income (Schedule 1)</th></tr></thead>
+          {% for c in cats %}<tr><td>{{ c }}</td><td class="r">{{ s.cats[c]|money }}</td></tr>{% endfor %}
+          <tr class="tot"><td>Total</td><td class="r">{{ s.income|money }}</td></tr>
+          <tr><td colspan="2">&nbsp;</td></tr>
+          <thead><tr><th colspan="2">Form 8949 boxes</th></tr></thead>
+          {% for b, t in s.boxes|dictsort %}<tr><td>Box {{ b }}</td><td class="r">{{ t[2]|money }}</td></tr>{% endfor %}
+        </table>
+      </div>
+    </section>
+  </div>
+  <aside>
+    <section class="card">
+      <h3>Report settings</h3>
+      <table class="t compact">
+        <tr><td>Calculation method</td><td class="r">{{ methods[1]|upper if s.year >= 2025 else methods[0]|upper }}</td></tr>
+        <tr><td>Cost basis tracking</td><td class="r">{{ 'Per wallet / account' if s.year >= 2025 else 'Universal (all wallets)' }}</td></tr>
+        <tr><td>Country</td><td class="r">United States</td></tr>
+      </table>
+    </section>
+    <section class="card">
+      <h3>Checklist</h3>
+      <ul class="check">
+        <li><b>Items to review:</b> {{ s.flags|length }} this year (see <code>basis/basis_flags.csv</code>).</li>
+        {% if s.year >= 2025 %}<li><b>Form 1099-DA:</b> {{ forms|length }} imported for {{ s.year }}. <a href="{{ url_for('da_list') }}">Import / reconcile</a></li>
+        <li><b>Standing order:</b> keep the HIFO method statement (in the IRS Forms export README) with your records.</li>{% endif %}
+        {% if s.year == 2025 %}<li><b>2025 allocation:</b> basis on hand on Jan 1, 2025 was allocated per wallet (Rev. Proc. 2024-28): <code>basis/basis_allocation_2025.csv</code>.</li>{% endif %}
+        <li><b>Form 1040:</b> answer <b>Yes</b> to the digital asset question.</li>
+      </ul>
+    </section>
+    <section class="card">
+      <h3>Downloads</h3>
+      {% for t, lab in tabs.items() %}<a class="dl" href="#" onclick="openTab('{{ t }}'); return false">{{ lab }}</a>{% endfor %}
+    </section>
+  </aside>
+</div>
+
+<dialog id="export" class="modal">
+  <div class="modal-head"><h3>Download your {{ s.year }} crypto tax reports</h3>
+    <button class="x" onclick="this.closest('dialog').close()">×</button></div>
+  {% for n in s.notes %}<div class="notice">{{ n }}</div>{% endfor %}
+  <div class="tabs">{% for t, lab in tabs.items() %}<button class="tab" data-t="{{ t }}" onclick="openTab('{{ t }}')">{{ lab }}</button>{% endfor %}</div>
+  {% for t, lab in tabs.items() %}
+  <div class="tabpane" data-t="{{ t }}">
+    {% for e in exports if e.tab == t %}
+      <div class="exp">
+        <div class="ico">{{ 'PDF' if e.filename.endswith('.pdf') else 'CSV' }}</div>
+        <div class="grow"><b>{{ e.title }}</b><div class="muted small">{{ e.description }}</div></div>
+        <a class="btn" href="{{ url_for('export', year=s.year, key=e.key) }}" onclick="busy(this)">Generate</a>
+      </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const S = {{ s.series|tojson }};
+lineChart(document.getElementById('gains'), S.map(p => p.t), [{label: 'Capital gains', data: S.map(p => p.v), color: '--c1', stepped: true}]);
+function openTab(t) {
+  const d = document.getElementById('export'); if (!d.open) d.showModal();
+  d.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  d.querySelectorAll('.tabpane').forEach(p => p.style.display = p.dataset.t === t ? '' : 'none');
+}
+openTab('irs'); if (location.hash !== '#export') document.getElementById('export').close();
+function busy(a) { const t = a.textContent; a.textContent = 'Generating…'; setTimeout(() => a.textContent = t, 4000); }
+</script>
+{% endblock %}

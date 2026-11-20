@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Portfolio{% endblock %}
+{% block body %}
+<div class="head-row"><h1>Portfolio</h1></div>
+<div class="grid-2">
+  <section class="card">
+    <div class="kpis">
+      <div><div class="kpi">{{ a.mv|money(cents=False) }}</div><div class="muted small"><span class="dot mv"></span>Market value</div></div>
+      <div><div class="kpi">{{ a.cost|money(cents=False) }}</div><div class="muted small"><span class="dot cost"></span>Cost basis</div></div>
+      <div><div class="kpi {{ 'pos' if a.mv >= a.cost else 'neg' }}">{{ (a.mv - a.cost)|money(signed=True, cents=False) }}</div><div class="muted small">Unrealized</div></div>
+    </div>
+    <div class="chart"><canvas id="hist"></canvas></div>
+    <div class="muted small">Month-end values. Past market value uses the last price seen in your own transactions; today's uses live prices.</div>
+  </section>
+  <section class="card">
+    <h3>Tax activity</h3>
+    <table class="t compact">
+      <thead><tr><th>Tax year</th><th class="r">Gains</th><th class="r">Income</th></tr></thead>
+      <tbody>
+      {% for t in tax %}
+        <tr><td><a href="{{ url_for('tax', year=t.year) }}">{{ t.year }}</a></td>
+          <td class="r {{ 'pos' if t.gains >= 0 else 'neg' }}">{{ t.gains|money(signed=True, cents=False) }}</td>
+          <td class="r">{{ t.income|money(cents=False) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card">
+  <div class="head-row">
+    <h2>Assets</h2>
+    <input id="q" class="input" placeholder="Search…" oninput="filterRows()">
+    <form method="get" class="inline">
+      <select name="account" class="input" onchange="this.form.submit()">
+        <option value="">All accounts</option>
+        {% for k, lab in accounts %}<option value="{{ k }}" {{ 'selected' if k == account }}>{{ lab }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+  <table class="t" id="assets">
+    <thead><tr><th>Asset</th><th>Allocation</th><th class="r">Price</th><th class="r">24h</th>
+      <th class="r">Cost basis</th><th class="r">Market value</th><th class="r">Unrealized return</th><th>Last 7 days</th></tr></thead>
+    <tbody>
+    {% for r in a.rows %}
+      <tr class="asset {{ 'more' if loop.index > 12 and not show_all }}" data-s="{{ r.symbol|lower }}" data-i="{{ loop.index }}"
+          onclick="toggleHolders({{ loop.index }})" title="Show the accounts holding {{ r.symbol }}">
+        <td><span class="caret" id="caret-{{ loop.index }}">▸</span><span class="sym">{{ r.symbol[:1] }}</span><b>{{ r.qty|qty }}</b> {{ r.symbol }}
+          <span class="muted small">· {{ r.holders|length }} account{{ 's' if r.holders|length != 1 }}</span></td>
+        <td><div class="bar"><span style="width: {{ [r.alloc, 100]|min }}%"></span></div><span class="small">{{ '%.0f'|format(r.alloc) if r.alloc >= 1 else '< 1' }}%</span></td>
+        <td class="r">{{ r.price|price }}</td>
+        <td class="r {{ 'pos' if (r.chg24 or 0) >= 0 else 'neg' }}">{{ '%+.2f%%'|format(r.chg24) if r.chg24 is not none else '—' }}</td>
+        <td class="r">{{ r.cost|money }}<div class="muted small">{{ r.cost_per_unit|price }} / {{ r.symbol }}</div></td>
+        <td class="r">{{ r.mv|money }}</td>
+        <td class="r {{ 'pos' if (r.unrealized or 0) >= 0 else 'neg' }}">{{ r.unrealized|money(signed=True) }}</td>
+        <td>{% if r.spark %}<canvas class="spark" width="110" height="26" data-v="{{ r.spark|tojson }}"></canvas>{% endif %}</td>
+      </tr>
+      <tr class="holders" id="holders-{{ loop.index }}" hidden>
+        <td colspan="8">
+          <table class="t compact inner">
+            <thead><tr><th>Account</th><th class="r">Balance</th><th>Share</th><th class="r">Cost basis</th>
+              <th class="r">Market value</th><th class="r">Unrealized</th></tr></thead>
+            <tbody>
+            {% for h in r.holders %}
+              <tr><td>{% if not account %}<a href="?account={{ h.account|urlencode }}" onclick="event.stopPropagation()">{{ h.label }}</a>{% else %}{{ h.label }}{% endif %}</td>
+                <td class="r"><b>{{ h.qty|qty }}</b> {{ r.symbol }}</td>
+                <td><div class="bar"><span style="width: {{ [h.share, 100]|min }}%"></span></div><span class="small">{{ '%.1f'|format(h.share) if h.share >= 0.1 else '< 0.1' }}%</span></td>
+                <td class="r">{{ h.cost|money }}</td><td class="r">{{ h.mv|money }}</td>
+                <td class="r {{ 'pos' if (h.unrealized or 0) >= 0 else 'neg' }}">{{ h.unrealized|money(signed=True) }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if a.rows|length > 12 and not show_all %}<div class="center"><a class="btn ghost" href="?all=1{{ '&account=' ~ account if account }}">See all {{ a.rows|length }}</a></div>{% endif %}
+  <div class="muted small">Live prices fetched {{ a.priced_at.strftime('%H:%M') }} UTC. Assets without a price feed (memecoins, NFTs, airdrop junk) are left out.</div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const H = {{ history|tojson }};
+lineChart(document.getElementById('hist'), H.map(p => p.t), [
+  {label: 'Market value', data: H.map(p => p.mv), color: '--c1'},
+  {label: 'Cost basis', data: H.map(p => p.cost), color: '--c2', dash: [5, 4]}]);
+document.querySelectorAll('canvas.spark').forEach(c => {
+  const v = JSON.parse(c.dataset.v); if (v.length < 2) return;
+  const x = c.getContext('2d'), w = c.width, h = c.height, lo = Math.min(...v), hi = Math.max(...v);
+  x.strokeStyle = css(v[v.length - 1] >= v[0] ? '--pos' : '--neg'); x.lineWidth = 1.5; x.beginPath();
+  v.forEach((p, i) => { const px = i * (w - 2) / (v.length - 1) + 1, py = h - 2 - (hi > lo ? (p - lo) / (hi - lo) : .5) * (h - 4);
+    i ? x.lineTo(px, py) : x.moveTo(px, py); }); x.stroke();
+});
+function toggleHolders(i) {
+  const row = document.getElementById('holders-' + i), open = row.hidden;
+  row.hidden = !open;
+  document.getElementById('caret-' + i).textContent = open ? '▾' : '▸';
+}
+function filterRows() {
+  const q = document.getElementById('q').value.toLowerCase();
+  document.querySelectorAll('#assets tbody tr.holders').forEach(tr => tr.hidden = true);
+  document.querySelectorAll('#assets tbody tr.asset').forEach(tr => {
+    tr.style.display = !q ? '' : (tr.dataset.s.includes(q) ? 'table-row' : 'none');
+    if (!q && tr.classList.contains('more')) tr.style.display = '';
+  });
+}
+</script>
+{% endblock %}

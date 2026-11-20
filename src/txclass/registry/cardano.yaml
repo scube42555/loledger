@@ -1,0 +1,23 @@
+# Cardano script registry: payment-credential (script) hash -> venue.
+# kind: order (batcher order/request script), lp_order, staking_order
+# Identified 2026-11-18 from the CIP-20 (674) messages of the txs that create and spend outputs
+# at each script in the user's own history (see `classify` summary for unregistered scripts).
+scripts:
+  00fb107bfbd51b3a5638867d3688e986ba38ff34fb738f5bd42b20d5: {venue: muesliswap-orderbook, kind: order}
+  c3e28c36c3447315ba5a56f33da6a6ddc1770a876a8d9f0cb3a97c4c: {venue: minswap-v2, kind: order}
+  a65ca58a4e9c755fa830173d2a5caed458ac0c73f97db7faae2e7e3b: {venue: minswap-v1, kind: order}
+  2c0f418d944902f96424cbc65283a18bd16f29386a4912bda3d8f1f8: {venue: vyfi, kind: order}
+  0b2ae6b8b77c28649ddd085f3792bde5f0a237c711c33165180d2272: {venue: vyfi, kind: order}
+  2618e94cdb06792f05ae9b1ec78b0231f4b7f4215b1b4cf52e6342de: {venue: spectrum, kind: order}
+  73ede893f547edbd25da6953fda33caacd01f44047922bf7c5ceb951: {venue: muesliswap-amm, kind: lp_order}
+  c2afd87ff836f64a20c33dc252e850cdd55f31627d64012d0960856f: {venue: muesliswap-staking, kind: staking_order}
+  cae07bd684bcb2e2f15356882deac1b6cc782b025dc23aae10758471: {venue: muesliswap-staking, kind: staking_order}
+
+# Aggregators named in CIP-20 messages (they route to the venues above or to unregistered scripts).
+aggregators: [dexhunter, muesliswap, eternl, taptools, monsterswap]
+
+# Fallback price ids for native tokens DefiLlama does not price under cardano:<policy><name>.
+# MELD -> meld-2: both CoinGecko MELD ids were ~$0.0145 in Apr 2024; on 2025-01-08 meld-2 was $0.000104
+# vs meld $0.0012, and the MuesliSwap MELD/ADA pool exit that day implied ~$0.000128 -> meld-2 (inferred).
+price_aliases:
+  a2944573e99d2ed3055b808eaa264f0bf119e01fc6b18863067c63e4.4d454c44: "coingecko:meld-2"

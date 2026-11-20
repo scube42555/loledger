@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "txclass"
+version = "0.1.0"
+description = "On-chain transaction classifier for EVM and Cardano wallets"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.27", "pyyaml>=6", "python-dotenv>=1", "eth-abi>=5", "eth-hash[pycryptodome]>=0.7", "pypdf>=5", "reportlab>=4", "flask>=3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "mypy>=1.10", "types-PyYAML", "types-reportlab"]
+
+[project.scripts]
+classify = "txclass.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+txclass = ["settings.yaml", "registry/*.yaml", "registry/abis/*.json", "web/templates/*.html", "web/static/*"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

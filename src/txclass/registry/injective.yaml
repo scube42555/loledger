@@ -1,0 +1,10 @@
+# Injective registry: tx "to" is the first message type (Cosmos SDK msgs) or a synthetic pseudo-address.
+contracts:
+  /cosmos.staking.v1beta1.MsgDelegate: {name: Delegate, kind: staking, protocol: injective-staking}
+  /cosmos.staking.v1beta1.MsgUndelegate: {name: Undelegate, kind: staking, protocol: injective-staking}
+  /cosmos.staking.v1beta1.MsgBeginRedelegate: {name: Redelegate, kind: staking, protocol: injective-staking}
+  /cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward: {name: Withdraw rewards, kind: staking, protocol: injective-staking}
+  injective:unbonding: {name: Unbonding completion, kind: staking, protocol: injective-staking}
+  /ibc.applications.transfer.v1.MsgTransfer: {name: IBC transfer, kind: bridge, protocol: ibc}
+  /injective.peggy.v1.MsgSendToEth: {name: Peggy withdrawal to Ethereum, kind: bridge, protocol: peggy}
+  injective:peggy: {name: Peggy bridge (Ethereum deposit), kind: bridge, protocol: peggy}

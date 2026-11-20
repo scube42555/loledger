@@ -1,0 +1,6 @@
+# Optional settings for `classify tax` and the web app (copy to tax_profile.yaml, which is git-ignored).
+name: "Your Name"            # printed on the IRS forms; add ssn: only if you want it printed
+filing_status: single         # married_separate -> $1,500 capital loss limit
+brokers_1099da: [Gemini, Coinbase, Crypto.com, Binance.US]   # sales there use Form 8949 box H/K from 2025
+capital_loss_carryover:       # amounts carried INTO a year, from your filed returns (overrides the estimate)
+  2025: {short_term: 0, long_term: 0}
