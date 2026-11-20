@@ -66,6 +66,7 @@ class AppData:
         self.lock = threading.Lock()
         self.settings = load_settings(None)
         self._prices: Prices | None = None
+        self.proceeds_choice = ""  # set on the tax page; overrides tax_profile.yaml until the server stops
         self.refresh()
 
     # -- loading -------------------------------------------------------------------------------
@@ -75,6 +76,8 @@ class AppData:
             self.res: Result = Engine(pre=self.pre, post=self.post).run(
                 load_legs(classified, self.root / "manual.yaml"))
             self.profile = Profile.load(self.root / "tax_profile.yaml")
+            if self.proceeds_choice:
+                self.profile.proceeds = self.proceeds_choice
             self.loaded = datetime.now(UTC)
             self._years: dict[int, TaxYear] = {}
             self._read_classified(classified)
@@ -249,6 +252,11 @@ class AppData:
         ys = {datetime.fromtimestamp(d.ts, UTC).year for d in self.res.disposals}
         ys |= {datetime.fromtimestamp(x.ts, UTC).year for x in self.res.income}
         return sorted(ys, reverse=True)
+
+    def set_proceeds(self, choice: str) -> None:
+        with self.lock:
+            self.proceeds_choice = self.profile.proceeds = choice
+            self._years = {}
 
     def tax_year(self, year: int) -> TaxYear:
         if year not in self._years:

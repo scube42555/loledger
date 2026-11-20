@@ -80,6 +80,7 @@ class Profile:
     filing_status: str = "single"  # married_separate -> $1,500 capital loss limit
     brokers_1099da: list[str] = field(default_factory=lambda: list(DEFAULT_1099DA_BROKERS))
     carryover: dict[int, tuple[Decimal, Decimal]] = field(default_factory=dict)  # year -> (ST, LT) carried IN
+    proceeds: str = "records"  # records | 1099da: use the proceeds a 1099-DA reports for the sales it covers
 
     @classmethod
     def load(cls, path: Path) -> Profile:
@@ -89,7 +90,8 @@ class Profile:
         co = {int(y): (Decimal(str(v.get("short_term", 0))), Decimal(str(v.get("long_term", 0))))
               for y, v in (d.get("capital_loss_carryover") or {}).items()}
         return cls(str(d.get("name") or ""), str(d.get("ssn") or ""), str(d.get("filing_status") or "single"),
-                   list(d.get("brokers_1099da") or DEFAULT_1099DA_BROKERS), co)
+                   list(d.get("brokers_1099da") or DEFAULT_1099DA_BROKERS), co,
+                   "1099da" if str(d.get("proceeds") or "").lower().replace("-", "") == "1099da" else "records")
 
     @property
     def loss_limit(self) -> Decimal:
@@ -115,10 +117,15 @@ class Line:
     qty: Decimal
     tx: str
     sold_ts: int
+    own_proceeds: Decimal | None = None  # our computed proceeds, when replaced by the 1099-DA's
 
     @property
     def gain(self) -> Decimal:
         return self.proceeds - self.basis
+
+    @property
+    def records_proceeds(self) -> Decimal:
+        return self.proceeds if self.own_proceeds is None else self.own_proceeds
 
 
 @dataclass
@@ -133,6 +140,7 @@ class TaxYear:
     positions: dict[tuple[str, str], list[Any]] = field(default_factory=dict)
     disposals: list[Disposal] = field(default_factory=list)
     prices: dict[str, Decimal] = field(default_factory=dict)  # Dec 31 USD price per asset family
+    da_adjusted: tuple[int, Decimal] = (0, D0)  # lines given 1099-DA proceeds, net change in proceeds
 
     @property
     def income_total(self) -> Decimal:
@@ -213,14 +221,15 @@ def build_year(res: Result, year: int, profile: Profile, classified: Path | None
     ty: TaxYear | None = None
     for y in range(first, year + 1):
         carry = profile.carryover.get(y, carry)
-        from .form1099da import broker_accounts
+        from .form1099da import apply_reported_proceeds, broker_accounts
 
         lines = build_lines(res, y, profile, broker_accounts(y))
+        adj = apply_reported_proceeds(y, lines) if profile.proceeds == "1099da" else (0, D0)
         inc: dict[str, Decimal] = defaultdict(Decimal)
         rows = [x for x in res.income if _year(x.ts) == y]
         for x in rows:
             inc[x.typ] += x.usd
-        ty = TaxYear(y, lines, dict(inc), rows, carry, profile)
+        ty = TaxYear(y, lines, dict(inc), rows, carry, profile, da_adjusted=adj)
         _schedule_d(ty)
         carry = carryover_out(ty.sched_d["7"], ty.sched_d["15"], profile.loss_limit)
     assert ty is not None
@@ -695,6 +704,11 @@ def year_notes(ty: TaxYear) -> list[str]:
     _, used = form_path("f8949", ty.year)
     if used != ty.year:
         notes.append(f"IRS forms for {ty.year} are not published yet: the {used} forms are used until they are.")
+    n, delta = ty.da_adjusted
+    if n:
+        notes.append(f"Proceeds from Form 1099-DA: {n} Form 8949 line(s) use the proceeds your broker reported "
+                     f"({'+' if delta >= 0 else '-'}${abs(delta):,.2f} vs. your records). Lot-level CSV reports keep your "
+                     "own figures.")
     if len(ty.lines) > 2000:
         notes.append(f"{len(ty.lines)} Form 8949 lines: more than TaxAct's 2,000-line import limit; use the TaxAct "
                      "summary and attach the consolidated Form 8949.")

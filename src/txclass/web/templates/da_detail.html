@@ -6,40 +6,62 @@
 {% if not form.rows %}
   <div class="notice">No transaction rows could be read from this {{ form.kind|upper }}. If your broker offers a CSV of the 1099-DA detail, import that instead; the extracted text is shown below for review.</div>
 {% endif %}
+{% set tc = form.total_check() %}
+{% if tc and form.rows %}
+  {% if (tc[0] - tc[1])|abs <= 1 %}<div class="muted small" style="margin-bottom:10px">✓ All rows read: {{ form.rows|length }} rows add up to the form's total proceeds of {{ tc[0]|money }}.</div>
+  {% else %}<div class="notice">Rows read add up to {{ tc[1]|money }} but the form's total proceeds are {{ tc[0]|money }}; some rows were not understood (see the extracted text below).</div>{% endif %}
+{% endif %}
 {% if r %}
 <section class="card">
   <div class="kpis">
     <div><div class="kpi">{{ r.matched }} / {{ form.rows|length }}</div><div class="muted small">Rows matched to your records</div></div>
     <div><div class="kpi">{{ r.reported_proceeds|money }}</div><div class="muted small">Proceeds on the 1099-DA</div></div>
     <div><div class="kpi">{{ r.our_proceeds|money }}</div><div class="muted small">Our proceeds at {{ form.account }}</div></div>
-    <div><div class="kpi {{ 'neg' if r.big_diffs else 'pos' }}">{{ r.big_diffs|length }}</div><div class="muted small">Matched rows differing by ≥ $1</div></div>
+    <div><div class="kpi {{ 'neg' if r.big_diffs else 'pos' }}">{{ r.big_diffs|length }}</div><div class="muted small">Days differing (units, or proceeds by ≥ $1)</div></div>
   </div>
+  <div class="muted small">Brokers list each lot sold as its own row; your Form 8949 combines the lots of one sale, so the two are compared per asset per day. Click a day to see its rows.</div>
 </section>
 <section class="card">
-  <h3>Rows</h3>
+  <h3>Sales by day</h3>
   <table class="t compact">
-    <thead><tr><th>Sold</th><th>Asset</th><th class="r">Units</th><th class="r">1099-DA proceeds</th><th class="r">Basis</th><th>Basis reported</th>
-      <th>Our line</th><th class="r">Our proceeds</th><th class="r">Difference</th></tr></thead>
+    <thead><tr><th>Sold</th><th>Asset</th><th class="r">1099-DA units</th><th class="r">Our units</th><th class="r">1099-DA proceeds</th>
+      <th class="r">Our proceeds</th><th class="r">Difference</th><th class="r">1099-DA basis</th><th class="r">Our basis</th><th>Status</th></tr></thead>
     <tbody>
-    {% for m in r.matches %}
-      <tr class="{{ 'warn' if m.line is none or (m.proceeds_diff and (m.proceeds_diff|abs) >= 1) }}">
-        <td>{{ m.row.date_sold }}</td><td>{{ m.row.asset }}</td><td class="r">{{ m.row.qty }}</td><td class="r">{{ m.row.proceeds|money }}</td>
-        <td class="r">{{ m.row.basis|money if m.row.basis else '—' }}</td><td>{{ 'yes' if m.row.basis_reported else 'no' }}</td>
-        <td>{% if m.line %}{{ m.line.description }} · box {{ m.line.box }}{% else %}<b>not found</b>{% endif %}</td>
-        <td class="r">{{ m.line.proceeds|money if m.line else '—' }}</td><td class="r">{{ m.proceeds_diff|money(signed=True) if m.proceeds_diff is not none else '—' }}</td></tr>
+    {% set label = {'match': '✓ matches', 'proceeds_differ': 'proceeds differ', 'units_differ': 'units differ',
+                    'only_form': 'not in our records', 'only_ours': 'not on 1099-DA'} %}
+    {% for g in r.groups %}
+      <tr class="asset {{ 'warn' if g.status != 'match' }}" onclick="toggleHolders({{ loop.index }})">
+        <td><span class="caret" id="caret-{{ loop.index }}">▸</span>{{ g.day }}</td><td>{{ g.asset }}</td>
+        <td class="r">{{ g.da_qty|qty if g.rows else '—' }}</td><td class="r">{{ g.our_qty|qty if g.lines else '—' }}</td>
+        <td class="r">{{ g.da_proceeds|money if g.rows else '—' }}</td><td class="r">{{ g.our_proceeds|money if g.lines else '—' }}</td>
+        <td class="r">{{ g.proceeds_diff|money(signed=True) if g.proceeds_diff is not none else '—' }}</td>
+        <td class="r">{{ g.da_basis|money if g.da_basis is not none else '—' }}</td><td class="r">{{ g.our_basis|money if g.lines else '—' }}</td>
+        <td>{{ label[g.status] }}</td></tr>
+      <tr class="holders" id="holders-{{ loop.index }}" hidden><td colspan="10">
+        <div class="grid-2 tight">
+          <table class="t compact inner"><thead><tr><th colspan="5">1099-DA rows ({{ g.rows|length }})</th></tr>
+            <tr><th class="r">Units</th><th>Acquired</th><th>Term</th><th class="r">Proceeds</th><th class="r">Basis</th></tr></thead>
+            {% for x in g.rows %}<tr><td class="r">{{ x.qty }}</td><td>{{ x.acquired or '—' }}</td><td>{{ x.term or 'undetermined' }}{{ ' · basis reported' if x.basis_reported }}</td>
+              <td class="r">{{ x.proceeds|money }}</td><td class="r">{{ x.basis|money if x.basis else '—' }}</td></tr>{% endfor %}
+          </table>
+          <table class="t compact inner"><thead><tr><th colspan="5">Our Form 8949 lines ({{ g.lines|length }})</th></tr>
+            <tr><th>Description</th><th>Acquired</th><th>Box</th><th class="r">Proceeds</th><th class="r">Basis</th></tr></thead>
+            {% for ln in g.lines %}<tr><td>{{ ln.description }}</td><td>{{ ln.acquired }}</td><td>{{ ln.box }}</td>
+              <td class="r">{{ ln.records_proceeds|money }}{% if ln.own_proceeds is not none %}<div class="muted small">filed: {{ ln.proceeds|money }}</div>{% endif %}</td><td class="r">{{ ln.basis|money }}</td></tr>{% endfor %}
+          </table>
+        </div></td></tr>
     {% endfor %}
     </tbody>
   </table>
+  <p class="muted small">Small unit differences on our side are usually network or trading fees we count as tiny disposals and the
+    broker folds into the sale. Days "not on 1099-DA" can be events brokers leave out (e.g. stablecoin sales are reported only in aggregate, or not at all, for 2025).</p>
 </section>
-{% if r.unreported_lines %}
-<section class="card">
-  <h3>Our {{ form.account }} sales not on this 1099-DA ({{ r.unreported_lines|length }})</h3>
-  <table class="t compact"><thead><tr><th>Sold</th><th>Description</th><th class="r">Proceeds</th><th class="r">Basis</th><th>Box</th></tr></thead>
-  {% for ln in r.unreported_lines %}<tr><td>{{ ln.sold }}</td><td>{{ ln.description }}</td><td class="r">{{ ln.proceeds|money }}</td><td class="r">{{ ln.basis|money }}</td><td>{{ ln.box }}</td></tr>{% endfor %}
-  </table>
-  <p class="muted small">Brokers leave out some events (e.g. fee-only disposals or sales below de minimis thresholds); these still belong on your Form 8949.</p>
-</section>
-{% endif %}
 {% endif %}
 {% if form.text %}<section class="card"><details><summary>Extracted PDF text</summary><pre class="pre">{{ form.text }}</pre></details></section>{% endif %}
 {% endblock %}
+{% block scripts %}<script>
+function toggleHolders(i) {
+  const row = document.getElementById('holders-' + i), open = row.hidden;
+  row.hidden = !open; document.getElementById('caret-' + i).textContent = open ? '▾' : '▸';
+}
+</script>{% endblock %}

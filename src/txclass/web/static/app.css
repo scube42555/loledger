@@ -87,3 +87,5 @@ h3.sub { margin-top: 18px; }
 .theme { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .theme button { border: 0; background: var(--card); color: var(--muted); padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
 .theme button.on { background: var(--chip); color: var(--accent); }
+.yearnav { display: flex; align-items: center; gap: 10px; }
+.btn.disabled { opacity: .35; cursor: default; pointer-events: none; }

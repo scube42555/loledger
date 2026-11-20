@@ -610,6 +610,8 @@ def cmd_tax(args: argparse.Namespace, settings: Settings, store: Store) -> int:
 
     res = Engine(pre=args.method_pre, post=args.method_post).run(load_legs(Path(args.classified), Path(args.manual)))
     profile = Profile.load(Path(args.profile))
+    if args.proceeds:
+        profile.proceeds = args.proceeds
     for year in args.year:
         out = export_year(res, year, Path(args.out_dir) / str(year), profile, Path(args.classified))
         sd = out["sched_d"]
@@ -1182,6 +1184,8 @@ def main(argv: list[str] | None = None) -> int:
     tx.add_argument("--manual", default="manual.yaml")
     tx.add_argument("--profile", default="tax_profile.yaml", help="name, filing status, 1099-DA brokers, carryovers")
     tx.add_argument("--out-dir", default="tax")
+    tx.add_argument("--proceeds", choices=["records", "1099da"],
+                    help="Form 8949 proceeds for sales a 1099-DA covers: your records or the broker's (default: profile)")
     tx.add_argument("--method-pre", default="hifo", choices=["hifo", "fifo"])
     tx.add_argument("--method-post", default="hifo", choices=["hifo", "fifo"])
 

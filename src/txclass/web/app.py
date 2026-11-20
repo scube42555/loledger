@@ -83,7 +83,11 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         s = data.year_summary(year)
         forms = form1099da.load_forms(year)
         tabs = {"irs": "IRS Forms", "software": "Tax Filing Software", "csv": "CSV Reports"}
-        return render_template("tax.html", s=s, cats=CATEGORIES, exports=EXPORTS, tabs=tabs, forms=forms)
+        ys = sorted(data.years())
+        i = ys.index(year)
+        prev_y, next_y = (ys[i - 1] if i > 0 else None), (ys[i + 1] if i + 1 < len(ys) else None)
+        return render_template("tax.html", s=s, cats=CATEGORIES, exports=EXPORTS, tabs=tabs, forms=forms,
+                               prev_y=prev_y, next_y=next_y, proceeds=data.profile.proceeds)
 
     @app.get("/tax/<int:year>/export/<key>")
     def export(year: int, key: str) -> Response:
@@ -94,6 +98,14 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
             abort(404, "nothing to report for this export")
         mime = "application/pdf" if name.endswith(".pdf") else "text/csv"
         return Response(body, mimetype=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.post("/settings/proceeds")
+    def set_proceeds() -> Any:
+        choice = request.form.get("proceeds", "records")
+        if choice not in ("records", "1099da"):
+            abort(400)
+        data.set_proceeds(choice)
+        return redirect(request.referrer or url_for("portfolio"))
 
     @app.post("/refresh")
     def refresh() -> Any:

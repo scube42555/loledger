@@ -2,7 +2,13 @@
 {% block title %}{{ s.year }} tax report{% endblock %}
 {% block body %}
 <div class="head-row">
-  <h1>{{ s.year }} Tax Report</h1>
+  <div class="yearnav">
+    {% if prev_y %}<a class="btn ghost" href="{{ url_for('tax', year=prev_y) }}" title="{{ prev_y }} tax report">← {{ prev_y }}</a>
+    {% else %}<span class="btn ghost disabled" aria-disabled="true">←</span>{% endif %}
+    <h1>{{ s.year }} Tax Report</h1>
+    {% if next_y %}<a class="btn ghost" href="{{ url_for('tax', year=next_y) }}" title="{{ next_y }} tax report">{{ next_y }} →</a>
+    {% else %}<span class="btn ghost disabled" aria-disabled="true">→</span>{% endif %}
+  </div>
   <span class="muted">Jan 1, {{ s.year }} – Dec 31, {{ s.year }}</span>
   <button class="btn primary right" onclick="document.getElementById('export').showModal()">⇩ Export</button>
 </div>
@@ -55,6 +61,12 @@
       <table class="t compact">
         <tr><td>Calculation method</td><td class="r">{{ methods[1]|upper if s.year >= 2025 else methods[0]|upper }}</td></tr>
         <tr><td>Cost basis tracking</td><td class="r">{{ 'Per wallet / account' if s.year >= 2025 else 'Universal (all wallets)' }}</td></tr>
+        {% if s.year >= 2025 %}<tr><td title="For sales an imported 1099-DA covers">Form 8949 proceeds</td><td class="r">
+          <form method="post" action="{{ url_for('set_proceeds') }}" class="inline">
+            <select name="proceeds" class="input" onchange="this.form.submit()">
+              <option value="records" {{ 'selected' if proceeds == 'records' }}>Your records</option>
+              <option value="1099da" {{ 'selected' if proceeds == '1099da' }}>1099-DA reported</option>
+            </select></form></td></tr>{% endif %}
         <tr><td>Country</td><td class="r">United States</td></tr>
       </table>
     </section>
@@ -103,6 +115,11 @@ function openTab(t) {
   d.querySelectorAll('.tabpane').forEach(p => p.style.display = p.dataset.t === t ? '' : 'none');
 }
 openTab('irs'); if (location.hash !== '#export') document.getElementById('export').close();
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select, textarea') || document.getElementById('export').open) return;
+  {% if prev_y %}if (e.key === 'ArrowLeft') location.href = "{{ url_for('tax', year=prev_y) }}";{% endif %}
+  {% if next_y %}if (e.key === 'ArrowRight') location.href = "{{ url_for('tax', year=next_y) }}";{% endif %}
+});
 function busy(a) { const t = a.textContent; a.textContent = 'Generating…'; setTimeout(() => a.textContent = t, 4000); }
 </script>
 {% endblock %}
