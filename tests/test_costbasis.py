@@ -112,3 +112,21 @@ def test_unpriced_token_redeemed_takes_the_residual_proceeds() -> None:
     res = Engine().run(legs)
     got = {d.fam: d.proceeds for d in res.disposals if d.tx == t}
     assert got == {"ada": D(4), "lp": D(71)}
+
+
+def test_closed_account_written_off_without_a_deduction_by_default() -> None:
+    legs = buy("2024-03-01", "MEXC", "100", "100") + sell("2025-02-01", "MEXC", "40", "40") \
+        + buy("2025-09-01", "Gemini", "1", "1")
+    res = Engine(closures={"MEXC": "2025-08-01"}).run(legs)
+    assert not [d for d in res.disposals if d.event == "account_closed"]  # nothing on Form 8949
+    assert res.written_off == [(ts("2025-08-01"), "MEXC", "btc", D(60), D(60))]
+    assert not res.holdings.get(("MEXC", "btc")) and any(f.what.startswith("left on MEXC") for f in res.flags)
+    assert sum(lot.qty for lot in res.holdings[("Gemini", "btc")]) == D(1)  # other accounts untouched
+
+
+def test_closed_account_as_capital_loss_when_chosen() -> None:
+    legs = buy("2024-03-01", "MEXC", "100", "100") + sell("2025-02-01", "MEXC", "40", "40")
+    res = Engine(closures={"MEXC": {"date": "2025-08-01", "treatment": "capital_loss"}}).run(legs)
+    closed = [d for d in res.disposals if d.event == "account_closed"]
+    assert [(d.acct, d.lot.qty, d.proceeds, d.lot.cost) for d in closed] == [("MEXC", D(60), D(0), D(60))]
+    assert res.written_off == [] and not res.holdings.get(("MEXC", "btc"))

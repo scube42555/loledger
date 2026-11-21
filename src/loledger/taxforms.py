@@ -81,6 +81,7 @@ class Profile:
     brokers_1099da: list[str] = field(default_factory=lambda: list(DEFAULT_1099DA_BROKERS))
     carryover: dict[int, tuple[Decimal, Decimal]] = field(default_factory=dict)  # year -> (ST, LT) carried IN
     proceeds: str = "records"  # records | 1099da: use the proceeds a 1099-DA reports for the sales it covers
+    closed_accounts: dict[str, Any] = field(default_factory=dict)  # exchange -> date closed, or {date, treatment}
 
     @classmethod
     def load(cls, path: Path) -> Profile:
@@ -91,7 +92,8 @@ class Profile:
               for y, v in (d.get("capital_loss_carryover") or {}).items()}
         return cls(str(d.get("name") or ""), str(d.get("ssn") or ""), str(d.get("filing_status") or "single"),
                    list(d.get("brokers_1099da") or DEFAULT_1099DA_BROKERS), co,
-                   "1099da" if str(d.get("proceeds") or "").lower().replace("-", "") == "1099da" else "records")
+                   "1099da" if str(d.get("proceeds") or "").lower().replace("-", "") == "1099da" else "records",
+                   {str(k): (v if isinstance(v, dict) else str(v)) for k, v in (d.get("closed_accounts") or {}).items()})
 
     @property
     def loss_limit(self) -> Decimal:
@@ -141,6 +143,7 @@ class TaxYear:
     disposals: list[Disposal] = field(default_factory=list)
     prices: dict[str, Decimal] = field(default_factory=dict)  # Dec 31 USD price per asset family
     da_adjusted: tuple[int, Decimal] = (0, D0)  # lines given 1099-DA proceeds, net change in proceeds
+    written_off: dict[str, Decimal] = field(default_factory=dict)  # closed account -> basis left there, no deduction
 
     @property
     def income_total(self) -> Decimal:
@@ -235,6 +238,9 @@ def build_year(res: Result, year: int, profile: Profile, classified: Path | None
     assert ty is not None
     ty.positions = res.year_end.get(year, {})
     ty.disposals = [d for d in res.disposals if _year(d.ts) == year]
+    for ts, acct, _fam, _qty, cost in res.written_off:
+        if _year(ts) == year:
+            ty.written_off[acct] = ty.written_off.get(acct, D0) + cost
     if classified is not None and classified.exists():
         ty.prices = year_end_prices(classified, year)
     return ty
@@ -755,6 +761,18 @@ def year_notes(ty: TaxYear) -> list[str]:
         notes.append(f"Proceeds from Form 1099-DA: {n} Form 8949 line(s) use the proceeds your broker reported "
                      f"({'+' if delta >= 0 else '-'}${abs(delta):,.2f} vs. your records). Lot-level CSV reports keep your "
                      "own figures.")
+    closed: dict[str, Decimal] = defaultdict(Decimal)
+    for d in ty.disposals:
+        if d.event == "account_closed":
+            closed[d.acct] += d.lot.cost
+    for acct, cost in sorted(closed.items()):
+        notes.append(f"{acct} closed your account: the ${cost:,.2f} of basis still held there is reported as disposed "
+                     "of for $0 on the closing date (a capital loss, as set in tax_profile.yaml). Confirm this "
+                     "treatment with your tax preparer.")
+    for acct, cost in sorted(ty.written_off.items()):
+        notes.append(f"{acct} closed your account: what was still held there (${cost:,.2f} of basis) is written off "
+                     "with no deduction claimed, since no sale or exchange happened. If your tax preparer approves "
+                     "a loss, set treatment: capital_loss for it under closed_accounts in tax_profile.yaml.")
     if len(ty.lines) > 2000:
         notes.append(f"{len(ty.lines)} Form 8949 lines: more than TaxAct's 2,000-line import limit; use the TaxAct "
                      "summary and attach the consolidated Form 8949.")

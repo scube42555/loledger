@@ -116,8 +116,11 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
                 return f"export files in {c.export}"
             return "API (keys in .env)" if c is not None else ""
 
+        closed = data.profile.closed_accounts
         ex: list[dict[str, Any]] = sorted(({"name": e, "v": values.get(e), "assets": held.get(e, []),
-                                            "source": ex_source(e), "last": data.last_activity.get(e)}
+                                            "source": ex_source(e), "last": data.last_activity.get(e),
+                                            "closed": str((closed[e].get("date") if isinstance(closed[e], dict)
+                                                           else closed[e]) if e in closed else "")}
                                            for e in exchanges()),
                                           key=lambda e: (-(e["v"]["mv"] if e["v"] else 0), e["name"]))  # largest first
         chain_mv = {c: sum((r["v"]["mv"] for r in rs if r["v"]), Decimal(0)) for c, rs in groups.items()}
@@ -150,6 +153,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
             elif request.form.get("exchange"):
                 if request.form["exchange"] not in exchanges():
                     abort(400, "unknown exchange")
+                if request.form["exchange"] in data.profile.closed_accounts:
+                    abort(400, "this account is closed (tax_profile.yaml closed_accounts)")
                 syncer.sync_exchange(request.form["exchange"])
             else:
                 chain, address = request.form.get("chain", ""), request.form.get("address", "")

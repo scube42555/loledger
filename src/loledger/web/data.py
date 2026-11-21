@@ -94,9 +94,9 @@ class AppData:
     def refresh(self) -> None:
         with self.lock:
             classified = self.root / "classified.csv"
-            self.res: Result = Engine(pre=self.pre, post=self.post).run(
-                load_legs(classified, self.root / "manual.yaml"))
             self.profile = Profile.load(self.root / "tax_profile.yaml")
+            self.res: Result = Engine(pre=self.pre, post=self.post, closures=self.profile.closed_accounts).run(
+                load_legs(classified, self.root / "manual.yaml"))
             if self.proceeds_choice:
                 self.profile.proceeds = self.proceeds_choice
             self.loaded = datetime.now(UTC)

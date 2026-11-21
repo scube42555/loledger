@@ -232,9 +232,8 @@ def _load_file_exchanges(settings: Settings, store: Store, only: list[str] | Non
         for c in ledger.checks:
             print(f"  {c}")
         checks.extend(ledger.checks)
-    return [c if "MEXC futures" not in c else c + " (user recalls losing these funds to futures trading losses; "
-            "the export has no matching loss/liquidation entries, so the residual is reported, not booked)"
-            for c in checks]
+    return [c if "MEXC futures" not in c else c + " (the exports have no matching loss/liquidation entries; a loss "
+            "reconstructed from user-confirmed facts, if any, is in manual.yaml)" for c in checks]
 
 
 def solana_order_status(rows: list[Classified], client: Any, reg: Any) -> list[str]:
@@ -681,8 +680,11 @@ def _record(chain: str, wallet: str, live: Mapping[str, Decimal]) -> None:
 def cmd_basis(args: argparse.Namespace, settings: Settings, store: Store) -> int:
     from .costbasis import Engine, load as load_legs, write_reports
 
+    from .taxforms import Profile
+
     legs = load_legs(Path(args.classified), Path(args.manual))
-    res = Engine(pre=args.method_pre, post=args.method_post).run(legs)
+    closures = Profile.load(Path("tax_profile.yaml")).closed_accounts
+    res = Engine(pre=args.method_pre, post=args.method_post, closures=closures).run(legs)
     paths = write_reports(res, Path(args.out_dir))
     print(f"{len(legs)} legs -> {len(res.disposals)} disposals, {len(res.income)} income, {len(res.futures)} futures, "
           f"{len(res.flags)} flags")
@@ -694,8 +696,9 @@ def cmd_tax(args: argparse.Namespace, settings: Settings, store: Store) -> int:
     from .costbasis import Engine, load as load_legs
     from .taxforms import Profile, export_year
 
-    res = Engine(pre=args.method_pre, post=args.method_post).run(load_legs(Path(args.classified), Path(args.manual)))
     profile = Profile.load(Path(args.profile))
+    res = Engine(pre=args.method_pre, post=args.method_post, closures=profile.closed_accounts).run(
+        load_legs(Path(args.classified), Path(args.manual)))
     if args.proceeds:
         profile.proceeds = args.proceeds
     for year in args.year:

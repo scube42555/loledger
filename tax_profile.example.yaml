@@ -5,3 +5,8 @@ brokers_1099da: [Gemini, Coinbase, Crypto.com, Binance.US]   # sales there use F
 proceeds: records             # or 1099da: Form 8949 uses the proceeds an imported 1099-DA reports for its sales
 capital_loss_carryover:       # amounts carried INTO a year, from your filed returns (overrides the estimate)
   2025: {short_term: 0, long_term: 0}
+closed_accounts:              # exchange accounts you no longer have (date closed): no Re-sync; history still used
+  # What was still held there is written off that day with no deduction claimed; add treatment: capital_loss to
+  # report it as disposed of for $0 instead (confirm with your tax preparer).
+  # SomeExchange: "2025-08-01"
+  # OtherExchange: {date: "2025-08-01", treatment: capital_loss}

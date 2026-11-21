@@ -27,6 +27,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -369,6 +370,7 @@ class Result:
     holdings: dict[tuple[str, str], list[Lot]] = field(default_factory=dict)
     year_end: dict[int, dict[tuple[str, str], list[Lot]]] = field(default_factory=dict)  # holdings at Dec 31
     monthly: dict[str, dict[str, tuple[Decimal, Decimal]]] = field(default_factory=dict)  # "YYYY-MM" -> fam -> (qty, cost)
+    written_off: list[tuple[int, str, str, Decimal, Decimal]] = field(default_factory=list)  # closed accounts, no deduction
     methods: tuple[str, str] = ("hifo", "hifo")
 
 
@@ -379,10 +381,19 @@ class Engine:
     """Runs the universal ledger (gains through 2024) and the traced per-wallet ledger in parallel,
     switches to the allocated per-wallet ledger at 2025-01-01."""
 
-    def __init__(self, boundary: int = BOUNDARY, pre: str = "hifo", post: str = "hifo") -> None:
+    def __init__(self, boundary: int = BOUNDARY, pre: str = "hifo", post: str = "hifo",
+                 closures: dict[str, Any] | None = None) -> None:
         """pre: lot method of the universal pool through 2024 (as filed); post: per-wallet method from 2025.
-        Before the boundary the per-wallet ledger only traces which units physically moved (oldest first)."""
+        Before the boundary the per-wallet ledger only traces which units physically moved (oldest first).
+        closures: account -> date the exchange closed it, or {date, treatment} (tax_profile.yaml closed_accounts).
+        What the books still hold there that day leaves them: by default written off with no deduction claimed
+        (no sale or exchange happened); with treatment: capital_loss, disposed of for $0 instead (on Form 8949)."""
         self.boundary = boundary
+        self.closures: dict[str, tuple[int, bool]] = {}  # account -> (closing time, claim a capital loss)
+        for a, v in (closures or {}).items():
+            date, treatment = (v.get("date"), v.get("treatment", "")) if isinstance(v, dict) else (v, "")
+            self.closures[a] = (int(datetime.fromisoformat(str(date)).replace(tzinfo=UTC).timestamp()),
+                                str(treatment).replace("-", "_") == "capital_loss")
         self.pre, self.post = pre, post
         self.universal = Pools(pre)  # key ("*", fam)
         self.wallets = Pools("fifo")  # traced before the boundary, authoritative after
@@ -415,6 +426,28 @@ class Engine:
             share = proceeds * lot.qty / qty
             d = Disposal(ts, acct, fam, lot, share, event, tx, method)
             (self.res.gifts if gift else self.res.disposals).append(d)
+
+    def _close(self, ts: int, acct: str) -> None:
+        """The exchange closed the account: what is still held there leaves the books."""
+        loss = self.closures[acct][1]
+        for (a, fam), lots in list(self.wallets.p.items()):
+            qty = sum((lot.qty for lot in lots if lot.qty > 0), D0)
+            if a != acct or qty <= 0:
+                continue
+            cost = sum((lot.cost for lot in lots if lot.qty > 0), D0)
+            if loss:
+                self.dispose(ts, acct, fam, qty, D0, "account_closed", f"closed:{acct}")
+                what = (f"left on {acct} when the exchange closed the account: disposed of for $0 (a capital loss of "
+                        f"the ${cost:,.2f} basis, per tax_profile.yaml); confirm with your tax preparer")
+            else:
+                self.wallets.take((acct, fam), qty, ts, "account_closed")
+                if not self.switched:
+                    self.universal.take(("*", fam), qty, ts, "account_closed")
+                self.res.written_off.append((ts, acct, fam, qty, cost))
+                what = (f"left on {acct} when the exchange closed the account: written off with no deduction claimed "
+                        f"(${cost:,.2f} basis); set treatment: capital_loss in tax_profile.yaml if your preparer "
+                        "approves a loss")
+            self.res.flags.append(Flag(ts, acct, fam, qty, cost, what, f"closed:{acct}"))
 
     def move(self, ts: int, src: str, dst: str, fam: str, qty: Decimal, why: str) -> None:
         if qty <= 0 or src == dst:
@@ -489,6 +522,8 @@ class Engine:
             sched.append((g[0].ts, prio, g[0].i, "group", g))
         for o, i in pairs:
             sched.append((min(o.ts, i.ts), 1, min(o.i, i.i), "pair", (o, i)))
+        for acct, (ts, _loss) in self.closures.items():  # after everything else at that second
+            sched.append((ts, 3, 0, "close", acct))
         sched.sort(key=lambda x: (x[0], x[1], x[2]))
         paired = {id(x) for p in pairs for x in p}
         transit_by_fam: dict[str, deque[Lot]] = defaultdict(deque)
@@ -503,7 +538,9 @@ class Engine:
             if month and mo != month:
                 self._month(month)
             year, month = y, mo
-            if what == "pair":
+            if what == "close":
+                self._close(ts, str(obj))
+            elif what == "pair":
                 o, i = obj  # type: ignore[misc]
                 self._pair(o, i)
             else:
