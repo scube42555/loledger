@@ -48,11 +48,24 @@
           <thead><tr><th colspan="2">Taxable income (Schedule 1)</th></tr></thead>
           {% for c in cats %}<tr><td>{{ c }}</td><td class="r">{{ s.cats[c]|money }}</td></tr>{% endfor %}
           <tr class="tot"><td>Total</td><td class="r">{{ s.income|money }}</td></tr>
-          <tr><td colspan="2">&nbsp;</td></tr>
-          <thead><tr><th colspan="2">Form 8949 boxes</th></tr></thead>
-          {% for b, t in s.boxes|dictsort %}<tr><td>Box {{ b }}</td><td class="r">{{ t[2]|money }}</td></tr>{% endfor %}
         </table>
       </div>
+    </section>
+    <section class="card">
+      <div class="chain-head"><h3>Form 8949 summary totals</h3>
+        {% if boxes %}<a class="btn small right" href="{{ url_for('export', year=s.year, key='f8949_totals') }}">⇩ CSV</a>{% endif %}</div>
+      {% if boxes %}
+      <table class="t compact">
+        <thead><tr><th>Box</th><th>Term</th><th>Schedule D</th><th class="r">Transactions</th><th class="r">Proceeds (d)</th>
+          <th class="r">Cost basis (e)</th><th class="r">Gain or loss (h)</th></tr></thead>
+        {% for b in boxes %}<tr><td><b>{{ b.box }}</b></td><td>{{ b.term|capitalize }}</td><td>Line {{ b.sched_d }}</td>
+          <td class="r">{{ '{:,}'.format(b.count) }}</td><td class="r">{{ b.proceeds|money }}</td><td class="r">{{ b.basis|money }}</td>
+          <td class="r {{ 'pos' if b.gain >= 0 else 'neg' }}">{{ b.gain|money }}</td></tr>{% endfor %}
+      </table>
+      <p class="muted small">For software where you enter totals instead of importing every sale (Cash App Taxes, IRS Free File
+        Fillable Forms): enter each box as one Form 8949 line described “see attached statement”, then mail the line-by-line statement
+        (IRS Forms → Form 8949 consolidated) with Form 8453 after the e-filed return is accepted.</p>
+      {% else %}<p class="muted">No sales or other disposals in {{ s.year }}.</p>{% endif %}
     </section>
   </div>
   <aside>
@@ -74,7 +87,7 @@
       <h3>Checklist</h3>
       <ul class="check">
         <li><b>Items to review:</b> {{ s.flags|length }} this year (see <code>basis/basis_flags.csv</code>).</li>
-        {% if s.year >= 2025 %}<li><b>Form 1099-DA:</b> {{ forms|length }} imported for {{ s.year }}. <a href="{{ url_for('da_list') }}">Import / reconcile</a></li>
+        {% if s.year >= 2025 %}<li><b>Form 1099-DA:</b> {{ forms|length }} imported for {{ s.year }}. <a href="#da">Add / reconcile</a></li>
         <li><b>Standing order:</b> keep the HIFO method statement (in the IRS Forms export README) with your records.</li>{% endif %}
         {% if s.year == 2025 %}<li><b>2025 allocation:</b> basis on hand on Jan 1, 2025 was allocated per wallet (Rev. Proc. 2024-28): <code>basis/basis_allocation_2025.csv</code>.</li>{% endif %}
         <li><b>Form 1040:</b> answer <b>Yes</b> to the digital asset question.</li>
@@ -86,6 +99,48 @@
     </section>
   </aside>
 </div>
+
+<section class="card" id="da">
+  <div class="chain-head"><h3>Form 1099-DA · {{ s.year }}</h3>
+    {% if s.year >= 2025 %}<button class="btn small primary right" onclick="document.getElementById('da-add').showModal()">+ Add 1099-DA</button>{% endif %}</div>
+  {% if s.year < 2025 %}
+    <p class="muted">Brokers file Form 1099-DA starting with tax year 2025; nothing to import for {{ s.year }}.</p>
+  {% elif forms %}
+    <table class="t">
+      <thead><tr><th>Broker account</th><th>File</th><th class="r">Rows</th><th class="r">Matched</th>
+        <th class="r">1099-DA proceeds</th><th class="r">Our proceeds</th><th class="r">Days differing</th><th></th></tr></thead>
+      <tbody>
+      {% for f, r in forms %}
+        <tr><td>{{ f.account }}</td><td><a href="{{ url_for('da_detail', year=f.year, form_id=f.id) }}">{{ f.filename }}</a></td>
+          <td class="r">{{ f.rows|length }}</td><td class="r">{{ r.matched }} / {{ f.rows|length }}</td>
+          <td class="r">{{ r.reported_proceeds|money }}</td><td class="r">{{ r.our_proceeds|money }}</td>
+          <td class="r {{ 'neg' if r.big_diffs else 'pos' }}">{{ r.big_diffs|length }}</td>
+          <td class="r"><form method="post" action="{{ url_for('da_delete', year=f.year, form_id=f.id) }}" class="inline"
+              onsubmit="return confirm('Remove this imported 1099-DA?')"><button class="btn ghost small">Remove</button></form></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No 1099-DA added for {{ s.year }} yet. When your exchanges send theirs (usually by mid-February), add each one here
+      to reconcile it against your records.</p>
+  {% endif %}
+</section>
+
+{% if s.year >= 2025 %}
+<dialog id="da-add" class="modal">
+  <div class="modal-head"><h3>Add a {{ s.year }} Form 1099-DA</h3><button class="x" onclick="this.closest('dialog').close()">×</button></div>
+  <form method="post" action="{{ url_for('da_upload') }}" enctype="multipart/form-data" class="stack pad">
+    <input type="hidden" name="year" value="{{ s.year }}">
+    <label>Broker account
+      <select class="input" name="account">{% for e in da_exchanges %}<option>{{ e }}</option>{% endfor %}</select></label>
+    <label>File (the CSV transaction detail if the exchange offers it, otherwise the PDF)
+      <input class="input" type="file" name="file" accept=".csv,.pdf" required></label>
+    <p class="muted small">Once added, that account's {{ s.year }} sales go on Form 8949 box H/K (G/J where the form reports basis), and each
+      row is matched to your own records. The file stays on this computer (<code>data/1099da/</code>).</p>
+    <div><button class="btn primary">Import and reconcile</button></div>
+  </form>
+</dialog>
+{% endif %}
 
 <dialog id="export" class="modal">
   <div class="modal-head"><h3>Download your {{ s.year }} crypto tax reports</h3>
@@ -116,7 +171,7 @@ function openTab(t) {
 }
 openTab('irs'); if (location.hash !== '#export') document.getElementById('export').close();
 document.addEventListener('keydown', e => {
-  if (e.target.closest('input, select, textarea') || document.getElementById('export').open) return;
+  if (e.target.closest('input, select, textarea') || document.querySelector('dialog[open]')) return;
   {% if prev_y %}if (e.key === 'ArrowLeft') location.href = "{{ url_for('tax', year=prev_y) }}";{% endif %}
   {% if next_y %}if (e.key === 'ArrowRight') location.href = "{{ url_for('tax', year=next_y) }}";{% endif %}
 });

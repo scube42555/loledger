@@ -35,7 +35,7 @@ def _form(path: Path) -> None:
 
     parent = DictionaryObject({_n("/T"): TextStringObject("Page1[0]"), _n("/Kids"): ArrayObject()})
     pref = w._add_object(parent)
-    widgets = []
+    widgets: list[DictionaryObject] = []
     for name, state in (("c1_1[0]", "/1"), ("c1_1[1]", "/2")):  # two checkboxes, one on-state each
         widgets.append(DictionaryObject({
             _n("/Type"): _n("/Annot"), _n("/Subtype"): _n("/Widget"), _n("/FT"): _n("/Btn"),
@@ -69,7 +69,9 @@ def test_fill_sets_text_and_checkbox_value_on_the_widget_field(tmp_path: Path) -
     assert fields["Page1[0].c1_1[1]"]["/V"] == "/2"  # the regression: /V used to land on Page1[0]
     assert fields["Page1[0].c1_1[0]"]["/V"] == "/Off"
     assert "/V" not in fields["Page1[0]"]
-    annots = [a.get_object() for a in PdfReader(str(out)).pages[0]["/Annots"]]
+    arr = PdfReader(str(out)).pages[0]["/Annots"].get_object()
+    assert isinstance(arr, ArrayObject)
+    annots = [a.get_object() for a in arr]
     assert [a.get("/AS") for a in annots[:2]] == ["/Off", "/2"]
 
 

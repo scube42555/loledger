@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block body %}
+<div class="head-row">
+  <h1>Accounts</h1>
+  <span class="muted">{{ n_wallets }} wallets on {{ groups|length }} chains · {{ exchanges|length }} exchanges · {{ total|money(cents=False) }}</span>
+  <form method="post" action="{{ url_for('account_sync') }}" class="right">
+    <input type="hidden" name="all" value="1">
+    <button class="btn" {{ 'disabled' if job and job.running }} title="loledger run --refresh: new activity for every wallet and exchange">↻ Re-sync all accounts</button>
+  </form>
+  <button class="btn primary" onclick="document.getElementById('add').showModal()">+ Add account</button>
+</div>
+{% if error %}<div class="notice">{{ error }}</div>{% endif %}
+
+<section class="card sync {{ 'hide' if not job }}" id="sync">
+  <div class="sync-head">
+    <span class="spin {{ 'hide' if not (job and job.running) }}" id="sync-spin"></span>
+    <b id="sync-title">{{ job.title if job }}</b>
+    <span class="muted small" id="sync-state"></span>
+  </div>
+  <pre class="pre log" id="sync-log"></pre>
+</section>
+
+{% for chain, rows, mv in groups %}
+<section class="card">
+  <div class="chain-head"><span class="sym">{{ chain[:1] }}</span><h2>{{ chain }}</h2>
+    <span class="muted small">{{ rows|length }} {{ 'wallet' if rows|length == 1 else 'wallets' }}</span>
+    <span class="right">{{ mv|money(cents=False) }}</span></div>
+  <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
+    <thead><tr><th>Label</th><th>Address</th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}{% set w = r.w %}
+      <tr>
+        <td>{{ w.label or '—' }}
+          {% if w.gift %}<span class="chip">Gift recipient</span>{% elif not w.supported %}<span class="chip warn" title="No adapter for this chain: record its events in manual.yaml">Not synced</span>{% endif %}</td>
+        <td><code class="addr" title="{{ w.address }}">{{ w.address[:10] }}…{{ w.address[-6:] }}</code>
+          <button class="copy" type="button" onclick="navigator.clipboard.writeText('{{ w.address }}'); this.textContent='✓'" title="Copy address">⧉</button></td>
+        {% if r.v %}
+          <td class="r">{{ r.v.assets }}</td><td class="r">{{ r.v.cost|money(cents=False) }}</td>
+          <td class="r">{% if r.account %}<a href="{{ url_for('portfolio', account=r.account) }}" title="Holdings in this wallet">{{ r.v.mv|money(cents=False) }}</a>{% else %}{{ r.v.mv|money(cents=False) }}{% endif %}</td>
+        {% elif r.dup %}<td class="r muted small" colspan="3">same wallet as above</td>
+        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}
+        <td class="r">{% if w.supported and not w.gift %}
+          <form method="post" action="{{ url_for('account_sync') }}" class="inline">
+            <input type="hidden" name="chain" value="{{ w.chain }}"><input type="hidden" name="address" value="{{ w.address }}">
+            <button class="btn ghost small" {{ 'disabled' if job and job.running }} title="Fetch new activity for this wallet, then re-classify">↻ Re-sync</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+
+{% if exchanges %}
+<section class="card">
+  <div class="chain-head"><span class="sym">⇄</span><h2>Exchanges</h2>
+    <span class="muted small">read from export files in <code>exports/</code> or API keys in <code>.env</code>; re-read on every sync</span>
+    <span class="right">{{ exchanges|selectattr('v')|map(attribute='v')|map(attribute='mv')|sum|money(cents=False) }}</span></div>
+  <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
+    <thead><tr><th>Exchange</th><th></th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
+    <tbody>
+    {% for e in exchanges %}
+      <tr><td>{{ e.name }}</td><td></td>
+        {% if e.v %}<td class="r">{{ e.v.assets }}</td><td class="r">{{ e.v.cost|money(cents=False) }}</td>
+          <td class="r"><a href="{{ url_for('portfolio', account=e.name) }}">{{ e.v.mv|money(cents=False) }}</a></td>
+        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}<td></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<dialog id="add" class="modal" {{ 'open' if error and form }}>
+  <div class="modal-head"><h3>Add an account</h3><button class="x" type="button" onclick="this.closest('dialog').close()">×</button></div>
+  <form method="post" action="{{ url_for('account_add') }}" class="stack pad">
+    <label>Chain
+      <select class="input" name="chain" id="chain" onchange="document.getElementById('other').hidden = this.value !== '__other'" required>
+        <option value="" disabled {{ 'selected' if not form.chain }}>Choose a chain…</option>
+        {% for c in chains %}<option {{ 'selected' if form.chain == c }}>{{ c }}</option>{% endfor %}
+        <option value="__other" {{ 'selected' if form.chain == '__other' }}>Other (not supported yet)…</option>
+      </select></label>
+    <label id="other" {{ 'hidden' if form.chain != '__other' }}>Chain name
+      <input class="input" name="chain_other" value="{{ form.chain_other }}" placeholder="e.g. Cosmos"></label>
+    <label>Address <input class="input mono" name="address" value="{{ form.address }}" required autocomplete="off" spellcheck="false"
+      placeholder="0x…, addr1… / stake1…, bc1…"></label>
+    <label>Label <input class="input" name="label" value="{{ form.label }}" placeholder="e.g. ETH (Tangem)"></label>
+    <label class="row"><input type="checkbox" name="sync" value="1" {{ 'checked' if not form or form.get('sync', '1') }}> Sync it now (fetches its full history)</label>
+    <p class="muted small">Saved to <code>addresses.csv</code>. A label containing “Gift” marks a recipient you sent gifts to: it isn't fetched or counted as yours.
+      Wallets on chains without an adapter are listed but not synced; record their events in <code>manual.yaml</code>.</p>
+    <div><button class="btn primary">Add account</button></div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const box = document.getElementById('sync'), log = document.getElementById('sync-log');
+  let wasRunning = {{ 'true' if job and job.running else 'false' }};
+  async function poll() {
+    let j; try { j = await (await fetch("{{ url_for('sync_status') }}")).json(); } catch (e) { return setTimeout(poll, 3000); }
+    if (!j) return;
+    box.classList.remove('hide');
+    document.getElementById('sync-title').textContent = j.title;
+    document.getElementById('sync-spin').classList.toggle('hide', !j.running);
+    const m = Math.floor(j.elapsed / 60), sec = String(j.elapsed % 60).padStart(2, '0');
+    document.getElementById('sync-state').textContent = j.running ? `running · ${m}:${sec}`
+      : (j.returncode === 0 ? `finished in ${m}:${sec}` : `failed (exit ${j.returncode}) after ${m}:${sec}`);
+    const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+    log.textContent = j.log.join('\n'); if (atEnd) log.scrollTop = log.scrollHeight;
+    if (j.running) { wasRunning = true; setTimeout(poll, 1500); }
+    else if (wasRunning && j.returncode === 0) location.reload();  // fresh balances
+  }
+  poll();
+})();
+</script>
+{% endblock %}

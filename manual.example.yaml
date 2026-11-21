@@ -1,5 +1,5 @@
 # User-confirmed events on chains whose history cannot be fetched (copy to manual.yaml, which is git-ignored).
-# Read by `classify basis` / `tax` / `serve`; each entry becomes one leg: date (UTC), chain, wallet, token,
+# Read by `loledger basis` / `tax` / `serve`; each entry becomes one leg: date (UTC), chain, wallet, token,
 # amount (signed), usd (FMV of the leg), classification (default TRANSFER), subtype (as in classified.csv),
 # optional price_id (DefiLlama id, for live prices in the web app) and a note.
 - date: "2024-04-12 13:05:00"

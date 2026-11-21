@@ -1,4 +1,5 @@
-"""Local web app: portfolio, per-year tax report with exports, and Form 1099-DA import.
+"""Local web app: portfolio, accounts (add / re-sync wallets), per-year tax report with exports and Form 1099-DA
+import.
 
 Run with `loledger serve` (binds to 127.0.0.1 only). Everything is computed locally from classified.csv
 and manual.yaml; the only outbound calls are DefiLlama price lookups and, once per form, the blank IRS PDFs.
@@ -11,11 +12,14 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, Response, abort, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 
 from .. import form1099da
-from ..taxforms import EXPORTS
-from .data import CATEGORIES, AppData, account_label
+from ..taxforms import EXPORTS, box_summary
+from . import accounts as acc
+from .data import CATEGORIES, PARKED, AppData, account_label
+
+TAX_YEAR_COOKIE = "tax_year"  # last tax report viewed: the "Tax reports" menu opens it
 
 
 def money(v: Any, signed: bool = False, cents: bool = True) -> str:
@@ -54,11 +58,17 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
     data = AppData(root, pre, post)
+    syncer = acc.Syncer(root, data.refresh)
     app.jinja_env.filters.update(money=money, qty=qty, price=price)
 
     @app.context_processor
     def common() -> dict[str, Any]:
-        return {"years": data.years(), "loaded": data.loaded, "methods": (data.pre, data.post)}
+        return {"years": data.years(), "loaded": data.loaded, "methods": (data.pre, data.post),
+                "syncing": syncer.busy}
+
+    def exchanges() -> list[str]:
+        """Exchange accounts with activity (not listed in addresses.csv)."""
+        return sorted({a for a, _ in data.accounts() if "|" not in a and not a.startswith(PARKED)})
 
     @app.get("/")
     def index() -> Any:
@@ -76,18 +86,92 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         return render_template("portfolio.html", a=a, account=account, accounts=data.accounts(), tax=tax,
                                history=data.history(), show_all=request.args.get("all") == "1")
 
+    # -- accounts ----------------------------------------------------------------------------------
+    @app.get("/accounts")
+    def accounts(error: str = "", form: dict[str, str] | None = None) -> str:
+        values = data.account_values()
+        wallets = acc.read_wallets(root, data.settings)
+        groups: dict[str, list[dict[str, Any]]] = {}
+        seen: set[str] = set()
+        for w in sorted(wallets, key=lambda w: (w.gift, w.label.lower(), w.address)):
+            keys = [k for k in data.wallet_accounts(w.chain, w.address, w.label) if k in values]
+            dup = bool(keys) and all(k in seen for k in keys)  # e.g. two addr1 rows of one Cardano wallet
+            seen.update(keys)
+            v = {"mv": sum((values[k]["mv"] for k in keys), Decimal(0)),
+                 "cost": sum((values[k]["cost"] for k in keys), Decimal(0)),
+                 "assets": sum(values[k]["assets"] for k in keys)} if not dup and (keys or (w.supported and not w.gift)) \
+                else None  # synced but empty -> $0; gift recipients and unsupported chains -> "—"
+            groups.setdefault(w.chain, []).append({"w": w, "v": v, "dup": dup, "account": keys[0] if keys else ""})
+        ex: list[dict[str, Any]] = [{"name": e, "v": values.get(e)} for e in exchanges()]
+        chain_mv = {c: sum((r["v"]["mv"] for r in rs if r["v"]), Decimal(0)) for c, rs in groups.items()}
+        order = sorted(groups, key=lambda c: (-chain_mv[c], c))
+        return render_template("accounts.html", groups=[(c, groups[c], chain_mv[c]) for c in order], exchanges=ex,
+                               chains=acc.chain_choices(data.settings), job=syncer.job, error=error,
+                               form=form or {}, n_wallets=len(wallets), total=sum(chain_mv.values(), Decimal(0))
+                               + sum((e["v"]["mv"] for e in ex if e["v"]), Decimal(0)))
+
+    @app.post("/accounts/add")
+    def account_add() -> Any:
+        f = {k: request.form.get(k, "").strip() for k in ("chain", "chain_other", "address", "label")}
+        chain = f["chain_other"] if f["chain"] == "__other" else f["chain"]
+        try:
+            chain, address = acc.validate(data.settings, chain, f["address"], acc.read_wallets(root, data.settings))
+        except ValueError as e:
+            return accounts(error=str(e), form=f), 400
+        acc.append_wallet(root, chain, address, f["label"])
+        if request.form.get("sync") and not syncer.busy:
+            w = next(x for x in acc.read_wallets(root, data.settings) if x.chain == chain and x.address == address)
+            if w.supported and not w.gift:
+                syncer.sync_one(w)
+        return redirect(url_for("accounts"))
+
+    @app.post("/accounts/sync")
+    def account_sync() -> Any:
+        try:
+            if request.form.get("all"):
+                syncer.sync_all()
+            else:
+                chain, address = request.form.get("chain", ""), request.form.get("address", "")
+                w = next((x for x in acc.read_wallets(root, data.settings)
+                          if x.chain == chain and x.address == address), None)
+                if w is None or not w.supported or w.gift:
+                    abort(400, "this wallet can't be synced")
+                syncer.sync_one(w)
+        except RuntimeError as e:
+            return accounts(error=str(e)), 409
+        return redirect(url_for("accounts"))
+
+    @app.get("/accounts/sync/status")
+    def sync_status() -> Response:
+        return jsonify(syncer.job.status() if syncer.job else None)
+
+    # -- tax reports --------------------------------------------------------------------------------
+    @app.get("/tax")
+    def tax_latest() -> Any:
+        ys = data.years()
+        if not ys:
+            return render_template("message.html", title="No tax years yet",
+                                   message="No disposals or income found in classified.csv.")
+        last = request.cookies.get(TAX_YEAR_COOKIE, "")
+        year = int(last) if last.isdigit() and int(last) in ys else max(ys)
+        return redirect(url_for("tax", year=year))
+
     @app.get("/tax/<int:year>")
-    def tax(year: int) -> str:
+    def tax(year: int) -> Any:
         if year not in data.years():
             abort(404)
         s = data.year_summary(year)
-        forms = form1099da.load_forms(year)
+        forms = [(f, form1099da.reconcile(f, data.tax_year(year).lines)) for f in form1099da.load_forms(year)]
         tabs = {"irs": "IRS Forms", "software": "Tax Filing Software", "csv": "CSV Reports"}
         ys = sorted(data.years())
         i = ys.index(year)
         prev_y, next_y = (ys[i - 1] if i > 0 else None), (ys[i + 1] if i + 1 < len(ys) else None)
-        return render_template("tax.html", s=s, cats=CATEGORIES, exports=EXPORTS, tabs=tabs, forms=forms,
-                               prev_y=prev_y, next_y=next_y, proceeds=data.profile.proceeds)
+        resp = app.make_response(render_template(
+            "tax.html", s=s, cats=CATEGORIES, exports=EXPORTS, tabs=tabs, forms=forms, prev_y=prev_y, next_y=next_y,
+            proceeds=data.profile.proceeds, boxes=box_summary(data.tax_year(year)),
+            da_exchanges=exchanges() or ["Gemini", "Coinbase", "Crypto.com"]))
+        resp.set_cookie(TAX_YEAR_COOKIE, str(year), max_age=365 * 86400, samesite="Lax", httponly=True)
+        return resp
 
     @app.get("/tax/<int:year>/export/<key>")
     def export(year: int, key: str) -> Response:
@@ -112,19 +196,12 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         data.refresh()
         return redirect(request.referrer or url_for("portfolio"))
 
-    # -- 1099-DA ---------------------------------------------------------------------------------
+    # -- 1099-DA (imported from the tax report page of its year) ----------------------------------------
     @app.get("/1099-da")
-    def da_list() -> str:
-        forms = form1099da.load_forms()
-        exch = sorted({a for a, _ in data.accounts() if "|" not in a and not a.startswith(("escrow", "staked",
-                                                                                              "deposit", "xp-chain",
-                                                                                              "vault", "offlist"))})
-        rows = []
-        for f in forms:
-            r = form1099da.reconcile(f, data.tax_year(f.year).lines) if f.year in data.years() else None
-            rows.append((f, r))
-        return render_template("da_list.html", rows=rows, exchanges=exch or ["Gemini", "Coinbase", "Crypto.com"],
-                               default_year=max(2025, datetime.now(UTC).year - 1))  # forms arrive early next year
+    def da_list() -> Any:  # old menu link: forms now live on each year's tax report
+        ys = [y for y in data.years() if y >= 2025]
+        y = max(ys) if ys else max(data.years(), default=datetime.now(UTC).year)
+        return redirect(url_for("tax", year=y) + "#da")
 
     @app.post("/1099-da")
     def da_upload() -> Any:
@@ -132,6 +209,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         if not f or not f.filename:
             abort(400, "choose a file")
         year = int(request.form["year"])
+        if year < 2025:
+            abort(400, "Form 1099-DA starts with tax year 2025")
         account = request.form["account"]
         try:
             form = form1099da.import_file(year, account, f.filename, f.read())
@@ -152,7 +231,7 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
     def da_delete(year: int, form_id: str) -> Any:
         form1099da.delete_form(year, form_id)
         data._years.pop(year, None)
-        return redirect(url_for("da_list"))
+        return redirect(url_for("tax", year=year) + "#da")
 
     return app
 

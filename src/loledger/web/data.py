@@ -92,9 +92,11 @@ class AppData:
                 if a and lab:
                     out[f"{c}|{a.lower() if a.startswith('0x') else a}"] = lab
                     out.setdefault(a.lower() if a.startswith("0x") else a, lab)
+        self.wallet_by_label: dict[tuple[str, str], set[str]] = defaultdict(set)  # (chain, label) -> wallet ids
         with open(self.root / "classified.csv", newline="") as f:
             for r in csv.DictReader(f):
                 if r["wallet_label"]:
+                    self.wallet_by_label[(r["chain"], r["wallet_label"])].add(r["wallet"].split("#")[0])
                     out.setdefault(f"{r['chain']}|{r['wallet'].split('#')[0]}", r["wallet_label"].replace(" · rewards", ""))
         return out
 
@@ -193,6 +195,36 @@ class AppData:
     def accounts(self) -> list[tuple[str, str]]:
         accts = sorted({a for (a, f), lots in self.res.holdings.items() if lots and "@" not in f})
         return [(a, account_label(a, self._labels)) for a in accts]
+
+    def account_values(self) -> dict[str, dict[str, Any]]:
+        """Engine account -> current market value, cost basis and number of assets held."""
+        by: dict[str, dict[str, Any]] = defaultdict(lambda: {"mv": D0, "cost": D0, "assets": 0, "unpriced": 0})
+        held: dict[tuple[str, str], Decimal] = {}
+        for (acct, fam), lots in self.res.holdings.items():
+            if "@" in fam or not lots:
+                continue
+            q = sum((lot.qty for lot in lots), D0)
+            if q <= 0:
+                continue
+            held[(acct, fam)] = q
+            by[acct]["cost"] += sum((lot.cost for lot in lots), D0)
+        px = self.prices(sorted({f for _, f in held}))
+        for (acct, fam), q in held.items():
+            v = by[acct]
+            v["assets"] += 1
+            p = px.usd.get(fam)
+            if p is None:
+                v["unpriced"] += 1
+            else:
+                v["mv"] += q * p
+        return dict(by)
+
+    def wallet_accounts(self, chain: str, address: str, label: str) -> list[str]:
+        """Engine accounts behind an addresses.csv row (a Cardano addr1 row is booked under its stake key)."""
+        keys = {f"{chain}|{address.lower() if address.startswith('0x') else address}"}
+        if chain == "Cardano" and label and address.startswith("addr1"):
+            keys |= {f"{chain}|{w}" for w in self.wallet_by_label.get((chain, label), set())}
+        return sorted(keys)
 
     def assets(self, account: str = "") -> dict[str, Any]:
         agg: dict[str, list[Decimal]] = defaultdict(lambda: [D0, D0])

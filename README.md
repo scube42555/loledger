@@ -6,11 +6,16 @@ withdraw, staking, spam and so on. Each label comes with a confidence score and 
 the rule or evidence behind it. The tool links orders to their fills and LP deposits to their
 withdrawals, prices everything in USD at the time it happened, and writes a summary report.
 
-Supported chains:
-- **EVM:** Avalanche C-Chain (tested), Ethereum, Base and Arbitrum (configured, untested).
-- **Cardano**
+Supported:
+- **EVM:** Avalanche C-Chain, Ethereum, Base, Polygon, Arbitrum.
+- **Other chains:** Cardano, Solana, Sui, Algorand, Injective, Hedera, Chia, Bitcoin, Doge, Kaspa.
+- **Exchanges:** Crypto.com (API), and MEXC, Gemini, OKX, Binance.US and Coinbase (export files in `exports/`).
 
-Rows for other chains (Kaspa, for example) are skipped with a warning until an adapter exists.
+Wallets on other chains (Cosmos, for example) can still be listed. They are skipped with a warning, and
+their events can be entered in `manual.yaml`.
+
+On top of the classification, a cost-basis engine produces IRS Form 8949, Schedule D and Schedule 1,
+import files for tax software, and a local web app (portfolio, accounts, tax reports).
 
 ## Setup
 
@@ -138,64 +143,32 @@ realized P&L once the position is closed.
 - unregistered contracts and scripts
 - price coverage
 
-## How it works
+## Cost basis, tax forms and the web app
 
+```bash
+loledger basis                       # lots, gains, income -> basis/
+loledger tax --year 2025             # every export for the year -> tax/ (with a README of what to file)
+loledger serve                       # http://127.0.0.1:8765/ (local only)
 ```
-fetch ──► normalize ──► rules ──► decode ──► prices ──► match ──► positions/report
-(cache)   (movements)   (1.0)    (orders)   (USD)      (<1.0)
-```
 
-1. **Fetch** (`adapters/*/fetch.py`)
-   - **EVM:** Routescan/Etherscan account lists (normal, internal, ERC-20, ERC-721, ERC-1155) and an
-     RPC receipt for every tx. A full page is cut before its last block, so no rows are lost or
-     duplicated even though the explorer returns no log index.
-   - **Avalanche atomic imports/exports:** these are not EVM txs. They are found by comparing
-     computed balances with `balancehistory` and bisecting down to the exact block where they
-     differ.
-   - **Cardano:** Koios `account_txs` plus `tx_info` and `datum_info`. Intermediate partial-fill txs
-     that never pay the wallet are found by walking back from the final fill.
-2. **Normalize:** one signed leg per asset and counterparty, from the wallet's point of view.
-   - **EVM:** wrap and unwrap legs come from WETH9 `Deposit`/`Withdrawal` events.
-   - **Cardano:** an output is the wallet's only if its payment part is a key. A script that
-     carries the wallet's stake key does not count. Legs are netted per counterparty, and fee,
-     deposit, reward and mint legs are added so that every tx reconciles exactly.
-3. **Rules** (`rules.py`): fixed rules in this order — failed → spam → wrap → yield → LP → swap or
-   signed-order fill → escrow order → transfer, bridge, airdrop or claim.
-4. **Decode** (`decode/`)
-   - **KyberSwap:** fills are grouped by order hash from `OrderFilled`; `OrderCanceled` gives the
-     cancels.
-   - **Gelato:** order terms come from `DepositToken`, and placements are linked to their
-     cancel/fill through the per-order vault.
-   - **Cardano:** the order lifecycle is linked exactly by which tx spends the order UTxO. Datums
-     are decoded per venue: MuesliSwap order book, Minswap V1/V2, Spectrum, VyFi.
-5. **Prices** (`prices.py`, `enrich.py`): DefiLlama historical prices, cached per coin per hour.
-   Fallbacks are bridged-token aliases and the price implied by the wallet's own fills within 3 days.
-6. **Match** (`match.py`): pairs left unlinked are scored on value ratio, time gap, shared
-   counterparty script and decoded minimum receive. Assignment is greedy and one-to-one. Matches
-   always get confidence below 1.0, and a pair with weak evidence stays unmatched.
-7. **Positions** (`positions.py`) and **report** (`report.py`).
+The web app has three pages:
+- **Portfolio:** holdings at live prices, cost basis and unrealized gain, per asset and per account.
+- **Accounts:** wallets grouped by chain, with value per wallet. You can add a wallet (it is appended to
+  `addresses.csv`), re-sync one wallet, or re-sync everything. A sync runs the same `loledger` commands as
+  above and shows their output live.
+- **Tax reports:** opens the last year you viewed, or the most recent one. ←/→ (buttons or arrow keys)
+  switch years. Each year shows its summary, the Form 8949 summary totals, the downloads (IRS PDFs,
+  TaxAct/TurboTax files, summary totals, CSV reports), and its Form 1099-DA section, where you add the
+  forms your exchanges send and reconcile them against your records.
 
-`verify` reconciles computed balances against live chain state. On the sample wallets every
-Cardano stake key reconciles exactly. Avalanche reconciles except for spoofed/spam tokens, whose
-on-chain balances don't follow their Transfer events.
+**E-filing with totals only.** Some software takes summary totals per Form 8949 box instead of importing
+every sale (Cash App Taxes, IRS Free File Fillable Forms). For those, enter the rows from
+`form_8949_summary_totals_<year>.csv` as one line per box, then mail the line-by-line statement (the pages
+after the first in the consolidated Form 8949) with Form 8453.
 
-## Extending
-
-- **Unknown contract or script in the summary:** add it to `src/loledger/registry/evm_<chain>.yaml`
-  (`kind` is one of router, settlement, order_book, order_router, escrow, lp_pool, lp_nft, bridge,
-  yield_vault, staking, exchange, spam_distributor, limit_order_protocol). For Cardano, add it to
-  `registry/cardano.yaml` under `scripts`.
-- **Missing price:** add an entry to `price_aliases` in the chain's registry file.
-- **New EVM chain:** add a block to `settings.yaml` with chain id, explorer, RPC URL, DefiLlama
-  `price_chain` and `native_price_id`. Then add a registry YAML for it.
-- **New non-EVM chain (e.g. Kaspa):** write an adapter under `src/loledger/adapters/<chain>/` that
-  produces `Movement` and `TxContext` objects (see `model.py`). The rules, prices, matching and
-  report layers are shared across chains.
-- **Tuning heuristics:** edit `matching:` in `settings.yaml`.
+Not tax advice: review with a tax professional before filing.
 
 ## Development
 
-```bash
-.venv/bin/pytest -q          # 68 tests, no network (fake transports + hand-built fixtures)
-.venv/bin/mypy src tests     # strict
-```
+See [`CLAUDE.md`](CLAUDE.md) for the architecture, the project's accounting rules, how to extend it (new
+chains, exchanges, contracts, exports), and the test commands.

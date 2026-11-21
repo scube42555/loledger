@@ -2,7 +2,7 @@
 {% block title %}1099-DA {{ form.account }} {{ form.year }}{% endblock %}
 {% block body %}
 <div class="head-row"><h1>1099-DA · {{ form.account }} · {{ form.year }}</h1><span class="muted">{{ form.filename }} (imported {{ form.imported }} UTC)</span>
-  <a class="btn ghost right" href="{{ url_for('da_list') }}">← All forms</a></div>
+  <a class="btn ghost right" href="{{ url_for('tax', year=form.year) }}#da">← {{ form.year }} tax report</a></div>
 {% if not form.rows %}
   <div class="notice">No transaction rows could be read from this {{ form.kind|upper }}. If your broker offers a CSV of the 1099-DA detail, import that instead; the extracted text is shown below for review.</div>
 {% endif %}

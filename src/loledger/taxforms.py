@@ -580,6 +580,39 @@ def summary_lines(ty: TaxYear) -> list[Line]:
     return out
 
 
+BOX_ORDER = "ABCGHIDEFJKL"
+
+
+def box_summary(ty: TaxYear) -> list[dict[str, Any]]:
+    """Form 8949 summary totals, one row per box in form order: what you type into software that takes totals
+    (Cash App Taxes, Free File Fillable Forms) with the line-by-line statement sent separately (Form 8453)."""
+    counts: dict[str, int] = defaultdict(int)
+    for ln in ty.lines:
+        counts[ln.box] += 1
+    return [{"box": box, "term": "short" if box in "ABCGHI" else "long", "sched_d": SCHED_D_LINE[box],
+             "count": counts[box], "proceeds": p, "basis": b, "adjustment": D0, "gain": g}
+            for box, (p, b, g) in sorted(ty.box_totals().items(), key=lambda kv: BOX_ORDER.index(kv[0]))]
+
+
+def summary_totals_csv(ty: TaxYear) -> bytes:
+    rows = box_summary(ty)
+    if not rows:
+        return b""
+    desc = "Digital assets - see attached statement" if ty.year >= 2025 else "Cryptocurrency - see attached statement"
+    out = [[r["box"], "Short" if r["term"] == "short" else "Long", r["sched_d"], str(r["count"]), desc,
+            f"{r['proceeds']:.2f}", f"{r['basis']:.2f}", "", f"{r['adjustment']:.2f}", f"{r['gain']:.2f}"]
+           for r in rows]
+    for term, lab in (("short", "Total short-term"), ("long", "Total long-term")):
+        rs = [r for r in rows if r["term"] == term]
+        if rs:
+            out.append(["", lab, "", str(sum(r["count"] for r in rs)), "",
+                        f"{sum((r['proceeds'] for r in rs), D0):.2f}", f"{sum((r['basis'] for r in rs), D0):.2f}", "",
+                        f"{sum((r['adjustment'] for r in rs), D0):.2f}", f"{sum((r['gain'] for r in rs), D0):.2f}"])
+    return _csv_text(["Form 8949 box", "Term", "Schedule D line", "Transactions", "Description (a)",
+                      "Proceeds (d)", "Cost or other basis (e)", "Adjustment code (f)", "Adjustment amount (g)",
+                      "Gain or loss (h)"], out)
+
+
 def turbotax_csv(ty: TaxYear) -> bytes:
     return _csv_text(["Name of digital asset", "Received date", "Cost or other basis", "Date sold", "Proceeds",
                       "Number of units", "Applicable checkbox on Form 8949"],
@@ -696,6 +729,10 @@ EXPORTS = [
            "taxact_{year}_6col.csv", taxact6_csv),
     Export("taxact_sum", "software", "TaxAct summary (CSV)", "One line per Form 8949 box and asset, for years over "
            "TaxAct's 2,000-line limit; attach the consolidated 8949.", "taxact_{year}_summary.csv", taxact_summary_csv),
+    Export("f8949_totals", "software", "Form 8949 summary totals (CSV)", "One row per Form 8949 box with "
+           "proceeds, basis and gain, for software where you enter totals instead of importing every sale (Cash "
+           "App Taxes, Free File Fillable Forms). Mail the consolidated 8949's statement with Form 8453.",
+           "form_8949_summary_totals_{year}.csv", summary_totals_csv),
     Export("turbotax", "software", "TurboTax (CSV)", "Digital-asset gains and losses in the 7-column statement "
            "layout.", "turbotax_{year}.csv", turbotax_csv),
     Export("gains", "csv", "Capital gains", "Proceeds, cost basis and gain for every Form 8949 line.",
@@ -761,7 +798,7 @@ def _readme(ty: TaxYear, out_dir: Path, notes: list[str], written: list[str]) ->
          "- Fees paid in crypto are small disposals at FMV; their value is added to the cost of what the same "
          "transaction bought (or deducted from its proceeds).", "",
          "## Form 8949 boxes", ""]
-    for box, (p, b, g) in sorted(tot.items(), key=lambda kv: "ABCGHIDEFJKL".index(kv[0])):
+    for box, (p, b, g) in sorted(tot.items(), key=lambda kv: BOX_ORDER.index(kv[0])):
         n = sum(1 for ln in ty.lines if ln.box == box)
         L.append(f"- Box {box}: {n} lines, proceeds ${p:,.2f}, basis ${b:,.2f}, gain ${g:,.2f} "
                  f"(Schedule D line {SCHED_D_LINE[box]})")
@@ -792,7 +829,12 @@ def _readme(ty: TaxYear, out_dir: Path, notes: list[str], written: list[str]) ->
           "use whichever TaxAct's importer accepts, not both.",
           "- `turbotax_*.csv`: the 7-column digital-asset gain/loss layout (Name, Received date, Cost or other basis, "
           "Date sold, Proceeds, Number of units, Form 8949 box) used by TurboTax for uploaded statements. TurboTax's "
-          "accepted formats change; verify after import.", ""]
+          "accepted formats change; verify after import.",
+          "- `form_8949_summary_totals_*.csv`: one row per Form 8949 box (proceeds, basis, gain, Schedule D line) "
+          "for software where you enter totals instead of every sale (Cash App Taxes, IRS Free File Fillable "
+          "Forms). Enter each box as one Form 8949 line described 'see attached statement', then mail the "
+          "consolidated Form 8949 (its pages after the first are the line-by-line statement) with Form 8453 "
+          "within 3 business days of the IRS accepting the e-filed return.", ""]
     if notes:
         L += ["## Notes", ""] + [f"- {n}" for n in notes] + [""]
     L += ["## Files", ""] + [f"- `{f}`" for f in written]

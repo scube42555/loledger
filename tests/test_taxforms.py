@@ -44,3 +44,20 @@ def test_taxact_csv_in_7_and_6_column_layouts() -> None:
     six = taxact6_csv(ty).decode().splitlines()
     assert seven[0].endswith("Reporting Category,Long/Short") and seven[1].endswith(",I,Short")
     assert six[0].endswith("Reporting Category") and six[2].endswith(",L") and len(six) == len(seven)
+
+
+def test_summary_totals_one_row_per_box_in_form_order_with_term_totals() -> None:
+    from loledger.taxforms import box_summary, summary_totals_csv
+
+    ty = TaxYear(2025, [_line("L", "long", "50", "70"), _line("I", "short", "100", "80"),
+                        _line("H", "short", "10.004", "4"), _line("I", "short", "5", "1")], {}, [],
+                 (Decimal(0), Decimal(0)), Profile())
+    rows = box_summary(ty)
+    assert [(r["box"], r["sched_d"], r["count"]) for r in rows] == [("H", "2", 1), ("I", "3", 2), ("L", "10", 1)]
+    assert (rows[1]["proceeds"], rows[1]["basis"], rows[1]["gain"]) == (D(105), D(81), D(24))
+    out = summary_totals_csv(ty).decode().splitlines()
+    assert out[0].startswith("Form 8949 box,Term,Schedule D line,Transactions")
+    assert out[1] == "H,Short,2,1,Digital assets - see attached statement,10.00,4.00,,0.00,6.00"
+    assert out[-2] == ",Total short-term,,3,,115.00,85.00,,0.00,30.00"
+    assert out[-1] == ",Total long-term,,1,,50.00,70.00,,0.00,-20.00"
+    assert summary_totals_csv(TaxYear(2025, [], {}, [], (D(0), D(0)), Profile())) == b""

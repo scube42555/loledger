@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Ledger{% endblock %} · Crypto ledger</title>
+<title>{% block title %}Ledger{% endblock %} · Loledger</title>
+<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <script>
   try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
@@ -12,16 +13,11 @@
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="{{ url_for('portfolio') }}"><span class="mark">◆</span> Crypto ledger</a>
+  <a class="brand" href="{{ url_for('portfolio') }}" title="Loledger by Scube">{% include "_logo.html" %}</a>
   <nav>
     <a href="{{ url_for('portfolio') }}" class="{{ 'on' if request.endpoint == 'portfolio' }}">Portfolio</a>
-    <details class="menu {{ 'on' if request.endpoint == 'tax' }}">
-      <summary>Tax reports</summary>
-      <div class="menu-list">
-        {% for y in years %}<a href="{{ url_for('tax', year=y) }}">{{ y }} tax report</a>{% endfor %}
-      </div>
-    </details>
-    <a href="{{ url_for('da_list') }}" class="{{ 'on' if request.endpoint and request.endpoint.startswith('da_') }}">1099-DA</a>
+    <a href="{{ url_for('accounts') }}" class="{{ 'on' if request.endpoint == 'accounts' }}">Accounts{% if syncing %} <span class="spin" title="Sync running"></span>{% endif %}</a>
+    <a href="{{ url_for('tax_latest') }}" class="{{ 'on' if request.endpoint in ('tax', 'da_detail') }}">Tax reports</a>
   </nav>
   <form method="post" action="{{ url_for('refresh') }}" class="refresh">
     <div class="theme" role="group" aria-label="Theme">
