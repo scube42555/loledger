@@ -68,7 +68,7 @@ def test_syncer_runs_steps_logs_output_and_reloads_on_success(tmp_path: Path) ->
         time.sleep(0.05)
     assert s.job is not None and s.job.returncode == 0 and reloaded == [True]
     assert "fetched 3" in s.job.log and s.job.log[-1] == "Done."
-    assert (tmp_path / acc.ONE_WALLET_CSV).read_text().splitlines()[1] == "bc1qa,Bitcoin,Cold"
+    assert s.job.log[0].endswith("--refresh --only bc1qa")  # only this wallet is fetched
 
 
 def test_syncer_stops_at_failing_step_without_reloading(tmp_path: Path) -> None:

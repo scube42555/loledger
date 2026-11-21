@@ -108,6 +108,12 @@ class OkxClient:
             "withdrawals": self._accumulate("withdrawals", self.pages("/api/v5/asset/withdrawal-history", "ts"), "wdId"),
         }
 
+    def stored(self) -> dict[str, list[dict[str, Any]]]:
+        """Everything earlier syncs fetched, without calling OKX."""
+        return {k: list(self.store.get_raw(SOURCE, e, {}) or []) for k, e in
+                (("trading", "account_bills"), ("funding", "asset_bills"), ("deposits", "deposits"),
+                 ("withdrawals", "withdrawals"))}
+
     def balances(self) -> dict[str, Decimal]:
         """Trading + funding account balances per currency."""
         out: dict[str, Decimal] = defaultdict(Decimal)

@@ -46,12 +46,24 @@ def _short(a: str) -> str:
     return f"{a[:6]}…{a[-4:]}" if len(a) > 12 else a
 
 
+def _selected(only: list[str] | None, *names: str) -> bool:
+    """--only: no filter, or any of the given names (wallet address, chain or exchange name) is listed."""
+    if not only:
+        return True
+    wanted = {o.strip().lower() for o in only}
+    return any(n and n.lower() in wanted for n in names)
+
+
 def cmd_fetch(args: argparse.Namespace, settings: Settings, store: Store) -> int:
     wallets, _ = split_gifts(load_wallets(Path(args.addresses), settings, args.chain))
     wallet_set = {w.address for w in wallets}
+    only = getattr(args, "only", None)
+    if only:  # fetch just these; everything else is classified from what the store already holds
+        print(f"fetching only: {', '.join(only)} (other wallets and exchanges from the local store)")
     by_chain: dict[str, list[WalletSpec]] = defaultdict(list)
     for w in wallets:
-        by_chain[w.chain.name].append(w)
+        if _selected(only, w.address, w.chain.name, *w.chain.aliases):
+            by_chain[w.chain.name].append(w)
     for chain_name, ws in by_chain.items():
         chain = ws[0].chain
         if chain.kind == "cardano":
@@ -115,8 +127,9 @@ def cmd_fetch(args: argparse.Namespace, settings: Settings, store: Store) -> int
         fetcher.enrich_addresses(touched, names=not args.no_names)
         if args.top:
             _print_touched(chain_name, touched, store.get_address_info(chain_name), args.top)
-    _fetch_exchanges(settings, store)
-    args.exchange_checks = _load_file_exchanges(settings, store)
+    if _selected(only, "Crypto.com", "cryptocom"):
+        _fetch_exchanges(settings, store)
+    args.exchange_checks = _load_file_exchanges(settings, store, only)
     total_calls = store.stats.misses
     print(f"\ncache: {store.stats.hits} hits, {total_calls} misses (network fetches)")
     return 0
@@ -148,21 +161,40 @@ def _fetch_exchanges(settings: Settings, store: Store) -> None:
           f"{len(bundle.withdrawals)} withdrawals -> {len(moves)} movements ({dict(kinds)})")
 
 
-def _okx_api_rows(store: Store) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]] | None:
+def _okx_api_rows(store: Store, live: bool = True) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]] | None:
     """OKX API rows in the export layout (trading, funding, notes), or None without keys / on failure (the export
-    files are then used alone)."""
+    files are then used alone). live=False: only what earlier syncs stored (no network)."""
     from .adapters.exchange import okx
 
     if not okx.has_keys():
         return None
     try:
-        return okx.to_export_rows(okx.OkxClient(store).fetch())
+        client = okx.OkxClient(store)
+        return okx.to_export_rows(client.fetch() if live else client.stored())
     except Exception as e:  # keep going with the export files
         log.error("OKX API failed, using the export files only (%s: %s)", type(e).__name__, str(e)[:200])
         return None
 
 
-def _load_file_exchanges(settings: Settings, store: Store) -> list[str]:
+def _gemini_api_records(store: Store, path: Path, chain: str, live: bool) -> dict[str, list[dict[str, Any]]] | None:
+    """Gemini API records (trades, transfers) since the export ends, or None without keys / on failure (the export
+    files are then used alone). live=False: only what earlier syncs stored (no network)."""
+    from .adapters.exchange import files, gemini
+
+    if not gemini.has_keys():
+        return None
+    try:
+        client = gemini.GeminiClient(store)
+        if not live:
+            return client.stored()
+        last = max((m.timestamp for m in files.parse_gemini(path, chain).moves), default=0) if path.exists() else 0
+        return client.fetch(last * 1000)
+    except Exception as e:  # keep going with the export files
+        log.error("Gemini API failed, using the export files only (%s: %s)", type(e).__name__, str(e)[:200])
+        return None
+
+
+def _load_file_exchanges(settings: Settings, store: Store, only: list[str] | None = None) -> list[str]:
     """Parse file-based exchange exports into the store. Returns self-check lines for the summary."""
     from .adapters.exchange import files
 
@@ -171,12 +203,14 @@ def _load_file_exchanges(settings: Settings, store: Store) -> list[str]:
         if chain.kind != "exchange" or not chain.parser:
             continue
         path = Path(chain.export)
-        okx_api = _okx_api_rows(store) if chain.parser == "okx" else None
-        if not path.exists() and okx_api is None:
+        live = _selected(only, chain.name, *chain.aliases)
+        okx_api = _okx_api_rows(store, live) if chain.parser == "okx" else None
+        gem_api = _gemini_api_records(store, path, chain.name, live) if chain.parser == "gemini" else None
+        if not path.exists() and okx_api is None and gem_api is None:
             log.info("%s skipped: %s not found", chain.name, path)
             continue
         parsers = {"mexc": lambda: files.parse_mexc(path, chain.tz_hours, chain.name),
-                   "gemini": lambda: files.parse_gemini(path, chain.name),
+                   "gemini": lambda: files.parse_gemini(path, chain.name, gem_api),
                    "okx": lambda: files.parse_okx(path, chain.name, okx_api[:2] if okx_api else None),
                    "binanceus": lambda: files.parse_binanceus(path, chain.name),
                    "coinbase_manual": lambda: files.parse_coinbase_manual(path, chain.name)}
@@ -193,7 +227,7 @@ def _load_file_exchanges(settings: Settings, store: Store) -> list[str]:
             store.replace_wallet_movements(chain.name, wid, ms)
             EXCHANGE_WALLETS.setdefault(chain.name, set()).add(wid)
         store.upsert_txs(ledger.txs.values())
-        src = f"export {path}" + (" + API" if okx_api else "")
+        src = f"export {path}" + (" + API" if okx_api or gem_api else "")
         print(f"\n== {chain.name} ({src}): {len(ledger.moves)} movements in {len(ledger.txs)} entries")
         for c in ledger.checks:
             print(f"  {c}")
@@ -997,8 +1031,21 @@ def _verify_exchanges(settings: Settings, store: Store) -> int:
             ok = abs(c - o) < Decimal("1e-8")
             bad += 0 if ok else 1
             print(f"  {k:10} {'':13} {c:>24.8f} {o:>24.8f}{'' if ok else '  <-- MISMATCH'}")
-    from .adapters.exchange import okx
+    from .adapters.exchange import gemini, okx
 
+    if "Gemini" in settings.chains and gemini.has_keys():
+        moves = store.load_movements("Gemini", "gemini:exchange")
+        computed_g: dict[str, Decimal] = defaultdict(Decimal)
+        for m in moves:
+            computed_g[m.asset_id] += m.amount
+        live_g = gemini.GeminiClient(store).balances()
+        _record("Gemini", "gemini:exchange", live_g)
+        print(f"\nGemini ({len(moves)} movements)")
+        for k in sorted(set(computed_g) | set(live_g)):
+            c, o = computed_g.get(k, Decimal(0)), live_g.get(k, Decimal(0))
+            ok = abs(c - o) < Decimal("1e-8")  # the export rounds amounts for display (USD to the cent)
+            bad += 0 if ok else 1
+            print(f"  {k:10} {'':13} {c:>24.8f} {o:>24.8f}{'' if ok else '  <-- MISMATCH'}")
     if "OKX" in settings.chains and okx.has_keys():
         moves = store.load_movements("OKX", "okx:account")
         computed = defaultdict(Decimal)
@@ -1240,6 +1287,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--refresh", action="store_true", help="re-fetch the newest (tail) page of each endpoint")
     f.add_argument("--no-names", action="store_true", help="skip verified-contract-name lookups")
     f.add_argument("--top", type=int, default=30)
+    f.add_argument("--only", nargs="+", metavar="NAME", help="fetch only these wallets / chains / exchanges")
 
     v = sub.add_parser("verify", help="compare computed balances with live on-chain balances")
     v.add_argument("--addresses", required=True)
@@ -1260,6 +1308,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--no-prices", action="store_true", help="skip USD enrichment")
     r.add_argument("--summary", help="summary markdown path (default: <out>_summary.md)")
     r.add_argument("--no-match", action="store_true", help="skip heuristic matching")
+    r.add_argument("--only", nargs="+", metavar="NAME",
+                   help="fetch only these wallets / chains / exchanges (address, chain or exchange name); the rest "
+                        "is classified from the local store")
 
     c = sub.add_parser("compare", help="validation-only comparison of classified.csv against a CoinLedger export")
     c.add_argument("--coinledger", required=True, help="CoinLedger transactions CSV export")

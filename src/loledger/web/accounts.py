@@ -2,7 +2,8 @@
 
 A sync runs the CLI in a child process from the project folder (the same commands you would type), one job at
 a time, and the app reloads its data when the job succeeds:
-- one wallet: `loledger fetch --refresh` for just that wallet, then `loledger run` (cache-first) to re-classify;
+- one wallet or exchange: `loledger run --only <address or exchange>` (a wallet also with --refresh): only it is
+  fetched, everything else is re-classified from the local store;
 - all wallets: `loledger run --refresh`.
 Exchange accounts aren't listed in addresses.csv: they come from export files (exports/) or API keys, and are
 re-read on every sync.
@@ -24,7 +25,6 @@ from typing import Any, Callable
 from ..config import GIFT_LABEL, ConfigError, Settings
 
 ADDRESSES = "addresses.csv"
-ONE_WALLET_CSV = Path("data/sync_one.csv")  # gitignored (data/)
 
 
 @dataclass
@@ -147,20 +147,14 @@ class Syncer:
     def sync_exchange(self, name: str) -> SyncJob:
         """Exchanges are re-read on every run: API accounts fetch their recent days live, export-file exchanges
         re-read the files under exports/ (download newer exports there first)."""
-        return self._start(f"Re-sync {name}", [self._cli("run", "--addresses", ADDRESSES, "--out", "classified.csv")])
+        return self._start(f"Re-sync {name}", [self._cli("run", "--addresses", ADDRESSES, "--out", "classified.csv",
+                                                         "--only", name)])
 
     def sync_one(self, w: Wallet) -> SyncJob:
-        one = self.root / ONE_WALLET_CSV
-        one.parent.mkdir(parents=True, exist_ok=True)
-        buf = io.StringIO()
-        wr = csv.writer(buf, lineterminator="\n")
-        wr.writerow(["Address", "Chain", "Label"])
-        wr.writerow([w.address, w.chain, w.label])
-        one.write_text(buf.getvalue())
+        """New activity for this wallet only (--refresh); everything else is re-classified from the local store."""
         name = w.label or f"{w.address[:8]}…"
         return self._start(f"Re-sync {name} ({w.chain})", [
-            self._cli("fetch", "--addresses", str(ONE_WALLET_CSV), "--refresh", "--top", "0"),
-            self._cli("run", "--addresses", ADDRESSES, "--out", "classified.csv")])
+            self._cli("run", "--addresses", ADDRESSES, "--out", "classified.csv", "--refresh", "--only", w.address)])
 
     def _start(self, title: str, steps: list[list[str]]) -> SyncJob:
         with self.lock:

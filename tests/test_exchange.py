@@ -313,3 +313,38 @@ def test_okx_api_rows_take_tx_hash_and_fee_and_skip_internal_transfers(tmp_path:
     assert sorted((m.source, m.amount) for m in wd) == [("fee", Decimal("-1.2")), ("onchain_withdrawal", Decimal("-4"))]
     assert led.txs["okx:onchain_withdrawal:300024789907"].meta["txid"] == "1f76"
     assert sum((m.amount for m in led.moves if m.symbol == "BTC"), Decimal(0)) == Decimal("0.0403192")
+
+
+def test_gemini_symbol_split() -> None:
+    from loledger.adapters.exchange.gemini import split_symbol
+
+    assert [split_symbol(s) for s in ("ETHUSD", "BTCUSDT", "USDCUSD", "SOLETH", "DOGEBTC", "GUSDUSD")] == [
+        ("ETH", "USD"), ("BTC", "USDT"), ("USDC", "USD"), ("SOL", "ETH"), ("DOGE", "BTC"), ("GUSD", "USD")]
+
+
+def test_gemini_api_adds_only_what_the_export_lacks(tmp_path: Path) -> None:
+    from loledger.adapters.exchange.files import parse_gemini
+
+    head = ("Date,Time (UTC),Type,Symbol,Specification,Trade ID,Order ID,Tx Hash,ETH Amount ETH,Fee (ETH) ETH,"
+            "USD Amount USD,Fee (USD) USD,ETH Balance ETH,USD Balance USD")
+    (tmp_path / "h.csv").write_text(
+        f"{head}\n2026-11-01,10:00:00.000,Buy,ETHUSD,Limit,111,o1,,1.0 ETH,,($2000.00),($2.00),1.0 ETH,$98.00\n"
+        "2026-11-04,04:24:41.062,Credit,ETH,Deposit,,,,0.000047 ETH,,,,1.000047 ETH,$98.00\n")
+    api = {"trades": [  # tid 111 is in the export; 222 is new
+        {"tid": 111, "order_id": "o1", "symbol": "ETHUSD", "type": "Buy", "amount": "1", "price": "2000",
+         "fee_amount": "2", "fee_currency": "USD", "timestampms": 1793527200000},
+        {"tid": 222, "order_id": "o2", "symbol": "ETHUSD", "type": "Sell", "amount": "0.5", "price": "2100",
+         "fee_amount": "1.05", "fee_currency": "USD", "timestampms": 1795100000000}],
+        "transfers": [  # the staking credit at 04:24:41.062 is in the export; the withdrawal is new
+        {"eid": 1, "type": "Deposit", "status": "Complete", "currency": "ETH", "amount": "0.000047",
+         "timestampms": 1793766281062, "method": "Internal", "source": "Staking Yield"},
+        {"eid": 2, "type": "Withdrawal", "status": "Complete", "currency": "ETH", "amount": "0.3",
+         "feeAmount": "0.001", "feeCurrency": "ETH", "txHash": "ABC", "destination": "0xme",
+         "timestampms": 1795200000000}]}
+    led = parse_gemini(tmp_path, api=api)
+    bal: dict[str, Decimal] = {}
+    for m in led.moves:
+        bal[m.symbol] = bal.get(m.symbol, Decimal(0)) + m.amount
+    assert bal == {"ETH": Decimal("0.199047"), "USD": Decimal("-2000") - 2 + Decimal("1050") - Decimal("1.05")}
+    assert any("1 trade fill(s) and 1 transfer(s) not in the export added" in c for c in led.checks)
+    assert led.txs["gemini:onchain_withdrawal:eid2"].meta["txid"] == "abc"

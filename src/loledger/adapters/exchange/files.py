@@ -335,6 +335,62 @@ def _display_tol(cell: str) -> Decimal:
     return Decimal(2) * Decimal(10) ** -max(places, 2 if cell.strip().startswith(("$", "($")) else places)
 
 
+def _gemini_api(b: _Builder, w: str, rows: list[dict[str, str]], assets: list[str],
+                api: dict[str, list[dict[str, Any]]]) -> list[str]:
+    """Add Gemini API records the export rows don't have: trades by trade id; transfers by (time to the ms,
+    currency, amount), which is how the export lists them."""
+    from .gemini import split_symbol
+
+    trade_ids = {r["Trade ID"].strip() for r in rows if r.get("Trade ID", "").strip()}
+    seen_transfers: set[tuple[int, str, Decimal]] = set()
+    for r in rows:
+        if not r["Type"].strip() or r["Type"].strip() in ("Buy", "Sell"):
+            continue
+        ms = int(datetime.strptime(f"{r['Date']} {r['Time (UTC)']}", "%Y-%m-%d %H:%M:%S.%f")
+                 .replace(tzinfo=UTC).timestamp() * 1000 + 0.5)
+        for a in assets:
+            amt = _gemini_num(r.get(f"{a} Amount {a}", ""))
+            if amt:
+                seen_transfers.add((ms, a, abs(amt)))
+    n_tr = n_tf = 0
+    for t in api.get("trades", []):
+        if str(t["tid"]) in trade_ids:
+            continue
+        base, quote = split_symbol(t["symbol"])
+        qty, px, fee = Decimal(t["amount"]), Decimal(t["price"]), Decimal(t.get("fee_amount") or 0)
+        sign = 1 if t["type"] == "Buy" else -1
+        h = f"gemini:order:{t['order_id']}"
+        ts = int(t["timestampms"]) // 1000
+        meta: dict[str, Any] = {"journal_type": "TRADING", "instrument": t["symbol"], "source_file": "api"}
+        b.leg(w, h, ts, base, sign * qty, "trade", "gemini", meta)
+        b.leg(w, h, ts, quote, -sign * qty * px, "trade", "gemini", meta)
+        b.leg(w, h, ts, t.get("fee_currency") or quote, -abs(fee), "fee", "gemini", meta)
+        b.txs[h].meta["fills"] = int(b.txs[h].meta.get("fills", 0)) + 1
+        n_tr += 1
+    for t in api.get("transfers", []):
+        if t.get("status") not in ("Complete", "Completed"):
+            continue
+        cur, amt, ms = t["currency"], Decimal(t["amount"]), int(t["timestampms"])
+        if (ms, cur, amt) in seen_transfers:
+            continue
+        dep = t["type"] == "Deposit"
+        ts = ms // 1000
+        if t.get("method") == "Internal" or (dep and not t.get("txHash") and cur not in FIAT):
+            h, meta = f"gemini:credit:eid{t['eid']}", {"journal_type": "EXCHANGE_CREDIT", "spec": t.get("source") or "Deposit"}
+        else:
+            jt = ("FIAT_" if cur in FIAT else "ONCHAIN_") + ("DEPOSIT" if dep else "WITHDRAWAL")
+            h = f"gemini:{jt.lower()}:eid{t['eid']}"
+            meta = {"journal_type": jt, "txid": _hex_lower((t.get("txHash") or "").strip()),
+                    "txid_index": str(t.get("outputIdx", "")), "spec": t.get("method") or t["type"],
+                    "address": t.get("destination") or None, "network": t.get("network")}
+        src = meta["journal_type"].lower()
+        b.leg(w, h, ts, cur, amt if dep else -amt, src, "gemini", meta)
+        if t.get("feeAmount"):
+            b.leg(w, h, ts, t.get("feeCurrency") or cur, -abs(Decimal(t["feeAmount"])), "fee", "gemini", meta)
+        n_tf += 1
+    return [f"Gemini API: {n_tr} trade fill(s) and {n_tf} transfer(s) not in the export added"]
+
+
 def _gemini_key(r: dict[str, str]) -> tuple[Any, ...]:
     """A Gemini record, whatever the export: balance columns are left out (a newer export adds one per newly
     traded asset), as are empty amount/fee columns."""
@@ -345,13 +401,15 @@ def _gemini_key(r: dict[str, str]) -> tuple[Any, ...]:
     return fixed + amounts
 
 
-def parse_gemini(path: Path, chain: str = "Gemini") -> Ledger:
+def parse_gemini(path: Path, chain: str = "Gemini", api: dict[str, list[dict[str, Any]]] | None = None) -> Ledger:
     """Gemini 'transaction history' CSV(s): a file, or a folder of them (overlapping exports are merged, each
-    record once). Self-check: running sums must equal the per-row balance columns."""
+    record once). Self-check: running sums must equal the per-row balance columns. api: records from the Gemini
+    API (adapters/exchange/gemini.py); those the exports don't have are added."""
     b = _Builder(chain)
     w = "gemini:exchange"
     files = [path] if path.is_file() else sorted(f for f in path.glob("*.csv")
-                                                 if "Time (UTC)" in f.open(encoding="utf-8-sig").readline())
+                                                 if "Time (UTC)" in f.open(encoding="utf-8-sig").readline()) \
+        if path.exists() else []
     per_file = [list(csv.DictReader(f.open(encoding="utf-8-sig"))) for f in files]
     body, dupes = merge_rows([[r for r in rows if r["Type"].strip()] for rows in per_file], _gemini_key)
     # the totals row of the export that runs latest (the last row with no Type)
@@ -408,8 +466,9 @@ def parse_gemini(path: Path, chain: str = "Gemini") -> Ledger:
             cell = totals.get(f"{a} Balance {a}", "").strip()
             if cell and abs(_gemini_num(cell) - running[a]) > Decimal("0.000001") * max(Decimal(1), abs(running[a])):
                 diffs.append(f"{a}: ours {running[a].normalize():f} vs totals row {cell}")
+    api_notes = _gemini_api(b, w, rows, assets, api) if api else []
     final = {a: v for a, v in running.items() if abs(v) > Decimal("1e-9")}
-    return b.ledger(([f"Gemini: {dupes} row(s) repeated across {len(files)} export files; counted once"] if dupes else []) + [
+    return b.ledger(api_notes + ([f"Gemini: {dupes} row(s) repeated across {len(files)} export files; counted once"] if dupes else []) + [
         f"Gemini: {len(rows)} rows; per-row running balances differ beyond display rounding on {bad_rows} row/asset(s) "
         f"(cents of USD from Gemini's rounding)",
         "Gemini final balances vs the export's totals row: " + ("all match" if totals and not diffs else

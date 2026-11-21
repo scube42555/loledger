@@ -36,10 +36,13 @@
 <section class="card sync {{ 'hide' if not job }}" id="sync">
   <div class="sync-head">
     <span class="spin {{ 'hide' if not (job and job.running) }}" id="sync-spin"></span>
+    <span id="sync-mark"></span>
     <b id="sync-title">{{ job.title if job }}</b>
     <span class="muted small" id="sync-state"></span>
+    <button class="x" type="button" id="sync-close" title="Close (a running sync continues)">×</button>
   </div>
-  <pre class="pre log" id="sync-log"></pre>
+  <details id="sync-details" open><summary class="muted small">Show log</summary>
+    <pre class="pre log" id="sync-log"></pre></details>
 </section>
 
 {% if exchanges %}
@@ -137,19 +140,31 @@ function copyAddr(btn) {  // ✓ on success (✗ if the browser refused), back t
 }
 (() => {
   const box = document.getElementById('sync'), log = document.getElementById('sync-log');
-  let wasRunning = {{ 'true' if job and job.running else 'false' }};
+  const details = document.getElementById('sync-details');
+  let wasRunning = {{ 'true' if job and job.running else 'false' }}, current = null;
+  const dismissed = () => { try { return sessionStorage.getItem('syncClosed'); } catch (e) { return null; } };
+  document.getElementById('sync-close').onclick = () => {
+    box.classList.add('hide');
+    try { if (current) sessionStorage.setItem('syncClosed', String(current)); } catch (e) {}
+  };
   async function poll() {
     let j; try { j = await (await fetch("{{ url_for('sync_status') }}")).json(); } catch (e) { return setTimeout(poll, 3000); }
     if (!j) return;
-    box.classList.remove('hide');
+    const isNew = current !== null && current !== j.started;
+    current = j.started;
+    box.classList.toggle('hide', dismissed() === String(j.started));  // closed by the user: stays closed for this job
+    if (isNew) details.open = true;
+    document.getElementById('sync-mark').textContent = j.running ? '' : (j.returncode === 0 ? '✓' : '✗');
+    document.getElementById('sync-mark').className = j.running ? '' : (j.returncode === 0 ? 'pos' : 'neg');
+    if (!j.running && !wasRunning) details.open = j.returncode !== 0;  // finished: fold the log (keep it open on failure)
     document.getElementById('sync-title').textContent = j.title;
     document.getElementById('sync-spin').classList.toggle('hide', !j.running);
     const m = Math.floor(j.elapsed / 60), sec = String(j.elapsed % 60).padStart(2, '0');
     document.getElementById('sync-state').textContent = j.running ? `running · ${m}:${sec}`
-      : (j.returncode === 0 ? `finished in ${m}:${sec}` : `failed (exit ${j.returncode}) after ${m}:${sec}`);
+      : (j.returncode === 0 ? `finished in ${m}:${sec}` : `failed (exit ${j.returncode}) after ${m}:${sec}: see the log`);
     const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
     log.textContent = j.log.join('\n'); if (atEnd) log.scrollTop = log.scrollHeight;
-    if (j.running) { wasRunning = true; setTimeout(poll, 1500); }
+    if (j.running) { wasRunning = true; details.open = true; setTimeout(poll, 1500); }
     else if (wasRunning && j.returncode === 0) location.reload();  // fresh balances
   }
   poll();

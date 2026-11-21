@@ -13,6 +13,7 @@ covers how the code fits together and the rules to keep when changing it.
 .venv/bin/mypy src tests             # strict; keep it clean
 loledger --addresses addresses.csv --out classified.csv    # = `loledger run`: fetch (cache-first) + classify
 loledger run --addresses addresses.csv --refresh           # also pick up new activity (tail page of each history)
+loledger run --addresses addresses.csv --only OKX          # fetch just this wallet/chain/exchange; the rest from the store
 loledger basis | tax --year 2025 | serve | verify | reconcile | compare --coinledger <csv>
 ```
 
@@ -59,6 +60,12 @@ fetch ──► normalize ──► rules ──► decode ──► prices ─�
        on). The API keeps about 3 months, so fetched bills accumulate in the store by bill id. They are shaped
        like export rows and merged in `files.parse_okx` (bill ids match the exports; API rows win, carrying the
        on-chain tx hash and withdrawal fee).
+     - **Gemini** also reads its API (`gemini.py`, read-only Auditor key). The export stays the base. API
+       trades (`/v1/mytrades`, all pairs since a timestamp) and transfers (`/v1/transfers`, including internal
+       "Staking Yield" credits) are fetched from a few days before the newest known record and accumulated in the
+       store. `files.parse_gemini` adds only those the export lacks: trades by tid (= the export's Trade ID),
+       transfers by (ms timestamp, currency, amount). Live USD can differ by cents, because the export rounds
+       amounts for display.
      - **Overlapping export files must never double count.** Merge by the exchange's row id where one exists
        (OKX bill id, Binance.US Transaction_Id). Otherwise use `files.merge_rows`: identical rows within one file
        are separate records, and across files a record counts as often as the file with the most copies has it.
@@ -108,7 +115,9 @@ After classification:
     from addresses.csv, with exchanges listed separately. The Add form appends to addresses.csv. Re-sync
     runs the CLI in a background subprocess, one job at a time (`Syncer`). For one wallet that's
     `fetch --refresh` on `data/sync_one.csv` and then `run`; for all wallets it's `run --refresh`. Then
-    `AppData.refresh()` reloads, and the page polls `/accounts/sync/status`.
+    `AppData.refresh()` reloads, and the page polls `/accounts/sync/status`. One wallet or exchange syncs with
+    `run --only <address|exchange>` (a wallet adds --refresh). Only that one is fetched. Everything else is
+    re-classified from the store, which gives the same output as a full run in ~20 s instead of minutes.
   - **Tax reports:** `/tax` redirects to the last year viewed (the `tax_year` cookie) or else the most recent
     year. `/tax/<year>` has ←/→ buttons and arrow-key navigation, the export dialog, the Form 8949 summary
     totals, and the year's Form 1099-DA section (add, reconcile, remove). `/1099-da` only redirects there.
