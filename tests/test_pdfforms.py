@@ -10,8 +10,9 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, FloatObject, NameObject,
                            TextStringObject)
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from txclass.pdfforms import assemble, fill
+from txclass.pdfforms import assemble, fill, overlay
 
 
 def _n(s: str) -> NameObject:
@@ -98,3 +99,37 @@ def test_assemble_flattens_filled_forms_in_order(tmp_path: Path) -> None:
     assert not r.get_fields()
     assert "SECOND FORM" in r.pages[0].extract_text() and "FIRST FORM" in r.pages[2].extract_text()
     assert not r.pages[1].get("/Annots")
+
+
+def _blank(path: Path, pages: int = 2) -> None:
+    w = PdfWriter()
+    for _ in range(pages):
+        w.add_blank_page(612, 792)
+    with open(path, "wb") as fh:
+        w.write(fh)
+
+
+def test_overlay_prints_marks_on_the_chosen_pages(tmp_path: Path) -> None:
+    src, out = tmp_path / "blank.pdf", tmp_path / "marked.pdf"
+    _blank(src)
+    overlay(src, out, {1: [("l", 40, 700, "Taxpayer A."), ("r", 560, 680, "15,544"), ("x", 500, 660, ""),
+                           ("l", 40, 640, ("small print", 6.0))]})
+    r = PdfReader(str(out))
+    assert len(r.pages) == 2 and not r.pages[0].extract_text().strip()
+    text = r.pages[1].extract_text()
+    for s in ("Taxpayer A.", "15,544", "X", "small print"):
+        assert s in text
+    seen: list[tuple[str, float, float]] = []
+    r.pages[1].extract_text(visitor_text=lambda t, cm, tm, fd, fs: seen.append((t.strip(), tm[4], fs)) if t.strip() else None)
+    start = next(x for t, x, _ in seen if t == "15,544")
+    assert start + stringWidth("15,544", "Helvetica", 9) == pytest.approx(560)  # right-aligned: ends at x=560
+    assert next(fs for t, _, fs in seen if t == "small print") == 6.0
+
+
+def test_overlay_rejects_bad_pages_and_kinds(tmp_path: Path) -> None:
+    src = tmp_path / "blank.pdf"
+    _blank(src)
+    with pytest.raises(IndexError):
+        overlay(src, tmp_path / "x.pdf", {2: [("l", 0, 0, "a")]})
+    with pytest.raises(ValueError):
+        overlay(src, tmp_path / "x.pdf", {0: [("c", 0, 0, "a")]})

@@ -6,6 +6,9 @@ so each checkbox widget is itself a terminal field. Its value (/V) must go on th
 subform; otherwise viewers and flatteners show the box unchecked even though its appearance state (/AS) is on.
 Unknown field names raise KeyError, so a mistyped mapping fails loudly instead of leaving a line blank.
 
+`overlay` prints values at fixed positions onto forms that have no fillable fields (South Carolina's SCDOR
+forms, for example), so they read like a typed-in form.
+
 `assemble` merges files in order (optionally selected pages). Any part that still has form fields is flattened
 first with qpdf, which also builds appearance streams for the text values, so field names that repeat across
 forms (f1_01[0] on both the 1040 and the 1040-X) can't collide in the packet.
@@ -26,6 +29,7 @@ from pypdf.generic import BooleanObject, DictionaryObject, NameObject
 
 Check = tuple[int, str] | tuple[int, str, str]  # (page, field) or (page, field, on-state such as "/2")
 Part = Path | str | tuple[Path | str, Sequence[int]]  # whole file, or (file, 0-based page indexes)
+Mark = tuple[str, float, float, str | tuple[str, float]]  # (kind "l"/"r"/"x", x, y, text or (text, font size))
 
 
 def _name(annot: DictionaryObject) -> Any:
@@ -82,6 +86,41 @@ def fill(src: Path | str, out: Path | str, values: Mapping[int, Mapping[str, str
     acro = w._root_object["/AcroForm"].get_object()
     assert isinstance(acro, DictionaryObject)
     acro[NameObject("/NeedAppearances")] = BooleanObject(True)
+    with open(out, "wb") as fh:
+        w.write(fh)
+
+
+def overlay(src: Path | str, out: Path | str, marks: Mapping[int, Sequence[Mark]]) -> None:
+    """Print `marks` ({page: [(kind, x, y, text)]}) onto a form that has no fillable fields (e.g. SCDOR forms).
+
+    kind "l" draws text left-aligned at x, "r" right-aligned ending at x (amounts), "x" a bold X (checkbox). Text
+    is 9 pt Helvetica; pass (text, size) for another size. Coordinates are PDF points from the bottom-left corner.
+    """
+    from io import BytesIO
+
+    from reportlab.pdfgen import canvas
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    w = PdfWriter(clone_from=PdfReader(str(src)))
+    for pi, items in marks.items():
+        if not 0 <= pi < len(w.pages):
+            raise IndexError(f"page {pi} not in {src} ({len(w.pages)} pages)")
+        page = w.pages[pi]
+        box = page.mediabox
+        buf = BytesIO()
+        c = canvas.Canvas(buf, pagesize=(float(box.width), float(box.height)))
+        for kind, x, y, text in items:
+            s, size = text if isinstance(text, tuple) else (text, 9.0)
+            if kind == "x":
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(x, y, "X")
+            elif kind in ("l", "r"):
+                c.setFont("Helvetica", size)
+                (c.drawRightString if kind == "r" else c.drawString)(x, y, s)
+            else:
+                raise ValueError(f"mark kind must be 'l', 'r' or 'x', not {kind!r}")
+        c.save()
+        page.merge_page(PdfReader(BytesIO(buf.getvalue())).pages[0])
     with open(out, "wb") as fh:
         w.write(fh)
 
