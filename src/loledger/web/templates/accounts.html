@@ -21,6 +21,32 @@
         {% else %}<p class="muted small">Nothing held here right now.</p>{% endif %}
       </td></tr>
 {% endmacro %}
+{% macro wallet_row(r, id) %}{% set w = r.w %}
+      <tr class="{{ 'asset' if r.v else '' }}" {% if r.v %}onclick="toggleDetail('{{ id }}')" title="Show what this wallet holds"{% endif %}>
+        <td>{% if r.v %}{{ caret(id) }}{% else %}<span class="caret"></span>{% endif %}{{ w.label or '—' }}
+          {% if w.gift %}<span class="chip">Gift recipient</span>{% elif not w.supported %}<span class="chip warn" title="No adapter for this chain: record its events in manual.yaml">Not synced</span>{% endif %}</td>
+        <td><code class="addr" title="{{ w.address }}">{{ w.address[:10] }}…{{ w.address[-6:] }}</code>
+          <button class="copy" type="button" data-addr="{{ w.address }}" onclick="event.stopPropagation(); copyAddr(this)" title="Copy address">⧉</button></td>
+        {% if r.v %}
+          <td class="r">{{ r.v.assets }}</td><td class="r">{{ r.v.cost|money(cents=False) }}</td>
+          <td class="r">{% if r.account %}<a href="{{ url_for('portfolio', account=r.account) }}" onclick="event.stopPropagation()" title="Open in Portfolio">{{ r.v.mv|money(cents=False) }}</a>{% else %}{{ r.v.mv|money(cents=False) }}{% endif %}</td>
+        {% elif r.dup %}<td class="r muted small" colspan="3">same wallet as above</td>
+        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}
+        <td class="r">{% if w.supported and not w.gift %}
+          <form method="post" action="{{ url_for('account_sync') }}" class="inline" onclick="event.stopPropagation()">
+            <input type="hidden" name="chain" value="{{ w.chain }}"><input type="hidden" name="address" value="{{ w.address }}">
+            <button class="btn ghost small" {{ 'disabled' if job and job.running }} title="Fetch new activity for this wallet, then re-classify">↻ Re-sync</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% if r.v %}{{ detail(id, r.assets, 6) }}{% endif %}
+{% endmacro %}
+{% macro folded(rs, zid, text, tip) %}
+    <tbody><tr class="asset" onclick="toggleDetail('{{ zid }}')" title="{{ tip }}">
+      <td colspan="6">{{ caret(zid) }}<span class="muted">{{ text }}</span></td></tr></tbody>
+    <tbody id="d-{{ zid }}" hidden>
+    {% for r in rs %}{{ wallet_row(r, zid ~ '-' ~ loop.index) }}{% endfor %}
+    </tbody>
+{% endmacro %}
 {% macro caret(id) %}<span class="caret" id="c-{{ id }}">▸</span>{% endmacro %}
 <div class="head-row">
   <h1>Accounts</h1>
@@ -79,26 +105,16 @@
   <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
     <thead><tr><th>Label</th><th>Address</th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
     <tbody>
-    {% for r in rows %}{% set w = r.w %}{% set id = 'w' ~ loop.index ~ '-' ~ chain|replace(' ', '') %}
-      <tr class="{{ 'asset' if r.v else '' }}" {% if r.v %}onclick="toggleDetail('{{ id }}')" title="Show what this wallet holds"{% endif %}>
-        <td>{% if r.v %}{{ caret(id) }}{% else %}<span class="caret"></span>{% endif %}{{ w.label or '—' }}
-          {% if w.gift %}<span class="chip">Gift recipient</span>{% elif not w.supported %}<span class="chip warn" title="No adapter for this chain: record its events in manual.yaml">Not synced</span>{% endif %}</td>
-        <td><code class="addr" title="{{ w.address }}">{{ w.address[:10] }}…{{ w.address[-6:] }}</code>
-          <button class="copy" type="button" data-addr="{{ w.address }}" onclick="event.stopPropagation(); copyAddr(this)" title="Copy address">⧉</button></td>
-        {% if r.v %}
-          <td class="r">{{ r.v.assets }}</td><td class="r">{{ r.v.cost|money(cents=False) }}</td>
-          <td class="r">{% if r.account %}<a href="{{ url_for('portfolio', account=r.account) }}" onclick="event.stopPropagation()" title="Open in Portfolio">{{ r.v.mv|money(cents=False) }}</a>{% else %}{{ r.v.mv|money(cents=False) }}{% endif %}</td>
-        {% elif r.dup %}<td class="r muted small" colspan="3">same wallet as above</td>
-        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}
-        <td class="r">{% if w.supported and not w.gift %}
-          <form method="post" action="{{ url_for('account_sync') }}" class="inline" onclick="event.stopPropagation()">
-            <input type="hidden" name="chain" value="{{ w.chain }}"><input type="hidden" name="address" value="{{ w.address }}">
-            <button class="btn ghost small" {{ 'disabled' if job and job.running }} title="Fetch new activity for this wallet, then re-classify">↻ Re-sync</button>
-          </form>{% endif %}</td>
-      </tr>
-      {% if r.v %}{{ detail(id, r.assets, 6) }}{% endif %}
-    {% endfor %}
+    {% set zero = rows|selectattr('zero')|list %}{% set fold = zero|length > 1 %}
+    {% set gifts = rows|rejectattr('v')|selectattr('w.gift')|list %}
+    {% for r in rows if r.v and not (fold and r.zero) %}{{ wallet_row(r, 'w' ~ loop.index ~ '-' ~ chain|replace(' ', '')) }}{% endfor %}
     </tbody>
+    {% if fold %}{{ folded(zero, 'z-' ~ chain|replace(' ', ''), zero|length ~ ' zero-balance wallets', 'Show the ' ~ chain ~ ' wallets with a $0 balance') }}{% endif %}
+    <tbody>
+    {% for r in rows if not r.v and not r.w.gift %}{{ wallet_row(r, 'wn' ~ loop.index ~ '-' ~ chain|replace(' ', '')) }}{% endfor %}
+    </tbody>
+    {% if gifts %}{{ folded(gifts, 'g-' ~ chain|replace(' ', ''), gifts|length ~ (' gift recipient' if gifts|length == 1 else ' gift recipients'),
+                         'Addresses you sent gifts to (not yours: not fetched or counted)') }}{% endif %}
   </table>
 </section>
 {% endfor %}

@@ -109,6 +109,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         for rs in groups.values():  # largest balance first; gift / unsupported / duplicate rows ("—") last
             rs.sort(key=lambda r: (r["v"] is None, r["w"].gift, -(r["v"]["mv"] if r["v"] else 0),
                                    r["w"].label.lower(), r["w"].address))
+            for r in rs:  # shown as $0 (value rounds to whole dollars): folded under one "zero-balance" row
+                r["zero"] = r["v"] is not None and r["v"]["mv"] < Decimal("0.5")
         def ex_source(name: str) -> str:
             from ..adapters.exchange import gemini, okx
 
