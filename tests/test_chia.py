@@ -5,9 +5,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from txclass.adapters.chia.fetch import address_to_puzzle_hash, coin_id, puzzle_hash_to_address
-from txclass.adapters.chia.normalize import normalize
-from txclass.config import load_settings
+from loledger.adapters.chia.fetch import address_to_puzzle_hash, coin_id, puzzle_hash_to_address
+from loledger.adapters.chia.normalize import normalize
+from loledger.config import load_settings
 
 CHIA = load_settings().chains["Chia"]
 PH = "0x" + "11" * 32
@@ -59,8 +59,8 @@ def test_receive_spend_with_change_and_bundle_inputs_reconcile() -> None:
 def test_pooled_spend_across_own_addresses_becomes_internal() -> None:
     from decimal import Decimal
 
-    from txclass.adapters.chia.normalize import BUNDLE_CP, pair_bundles
-    from txclass.model import NATIVE_ASSET, AssetKind, Movement, TxContext
+    from loledger.adapters.chia.normalize import BUNDLE_CP, pair_bundles
+    from loledger.model import NATIVE_ASSET, AssetKind, Movement, TxContext
 
     def mv(w: str, leg: str, amt: str) -> Movement:
         return Movement(chain="Chia", tx_hash=f"chia:7:{w}", leg_id=leg, block=7, timestamp=1, wallet=w,

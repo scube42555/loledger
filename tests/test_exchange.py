@@ -11,13 +11,13 @@ from typing import Any
 import httpx
 import pytest
 
-from txclass.adapters.exchange import cryptocom
-from txclass.adapters.exchange.cryptocom import CryptoComBundle, CryptoComClient, normalize, param_string, sign
-from txclass.decode.exchanges import classify_exchange, link_exchange_transfers
-from txclass.http import HttpClient
-from txclass.model import AssetKind, Movement, TxContext
-from txclass.rules import Classified, Cls
-from txclass.store import Store
+from loledger.adapters.exchange import cryptocom
+from loledger.adapters.exchange.cryptocom import CryptoComBundle, CryptoComClient, normalize, param_string, sign
+from loledger.decode.exchanges import classify_exchange, link_exchange_transfers
+from loledger.http import HttpClient
+from loledger.model import AssetKind, Movement, TxContext
+from loledger.rules import Classified, Cls
+from loledger.store import Store
 
 
 def test_param_string_sorts_and_flattens() -> None:
@@ -121,7 +121,7 @@ def test_deposit_linked_by_tx_hash_and_log_index_dust_flagged() -> None:
 
 
 def test_mexc_network_suffix_split() -> None:
-    from txclass.adapters.exchange.files import split_network
+    from loledger.adapters.exchange.files import split_network
     assert split_network("AVAX-CCHAIN") == ("AVAX", "CCHAIN")
     assert split_network("USDT-SOL") == ("USDT", "SOL")
     assert split_network("BTC") == ("BTC", "")
@@ -131,7 +131,7 @@ def test_mexc_network_suffix_split() -> None:
 def test_gemini_parser_running_balance_and_totals(tmp_path: Any) -> None:
     from pathlib import Path
 
-    from txclass.adapters.exchange.files import parse_gemini
+    from loledger.adapters.exchange.files import parse_gemini
     hdr = ["Date", "Time (UTC)", "Type", "Symbol", "Specification", "USD Amount USD", "Fee (USD) USD", "USD Balance USD",
            "ETH Amount ETH", "Fee (ETH) ETH", "ETH Balance ETH", "Trade ID", "Order ID", "Tx Hash",
            "Deposit Tx Output", "Withdrawal Tx Output", "Withdrawal Destination", "Deposit Destination"]
@@ -179,7 +179,7 @@ def _wallet_leg(wallet: str, h: str, amount: str, sym: str, ts: int, cp: str = "
 
 
 def test_label_and_deposit_address_hints_link_hashless_deposits() -> None:
-    from txclass.decode.exchanges import link_exchange_heuristic
+    from loledger.decode.exchanges import link_exchange_heuristic
     okx_addr = "0xb78eb4f13021350b3190876bc701014b4ab336df"
     cb = _x_row("Coinbase", "deposit_from_chain", "202", "USDC", 10_000, wallet_label="ETH (Tangem)", txid="",
                 time_zone_unknown=True)
@@ -195,7 +195,7 @@ def test_label_and_deposit_address_hints_link_hashless_deposits() -> None:
 
 
 def test_exchange_named_destination_only_links_that_wallet() -> None:
-    from txclass.decode.exchanges import link_exchange_heuristic
+    from loledger.decode.exchanges import link_exchange_heuristic
     gem = _x_row("Gemini", "withdrawal_to_chain", "-35", "ETH", 1000, txid="cd427d", address="0xdest")
     elsewhere = _wallet_leg("0xother", "0x1", "35", "ETH", 1200)
     assert link_exchange_heuristic([gem, elsewhere], {}, {}) == []
@@ -205,7 +205,7 @@ def test_exchange_named_destination_only_links_that_wallet() -> None:
 
 
 def test_txid_without_destination_never_links_a_different_tx() -> None:
-    from txclass.decode.exchanges import link_exchange_heuristic
+    from loledger.decode.exchanges import link_exchange_heuristic
     x = _x_row("MEXC", "withdrawal_to_chain", "-10", "ETH", 1000, txid="0xdeadbeef")
     other = _wallet_leg("0xw", "0x99", "9.99", "ETH", 1100)
     assert link_exchange_heuristic([x, other], {}, {}) == []
@@ -221,7 +221,7 @@ def test_exchange_to_exchange_same_txid_is_exact() -> None:
 def test_coinbase_manual_dates_with_unquoted_comma(tmp_path: Any) -> None:
     from pathlib import Path
 
-    from txclass.adapters.exchange.files import parse_coinbase_manual
+    from loledger.adapters.exchange.files import parse_coinbase_manual
     p = Path(tmp_path) / "d.csv"
     p.write_text("Date,Type,From Label,Amount,Asset\nSep 13, 2026 07:46 PM,Deposit,ETH (Tangem),202.00,USDC\n")
     led = parse_coinbase_manual(p)
@@ -231,14 +231,14 @@ def test_coinbase_manual_dates_with_unquoted_comma(tmp_path: Any) -> None:
 
 
 def test_base58_hashes_keep_their_case() -> None:
-    from txclass.adapters.exchange.files import _hex_lower, _split_txid
+    from loledger.adapters.exchange.files import _hex_lower, _split_txid
     assert _hex_lower("2mHw6CxkKnCQts") == "2mHw6CxkKnCQts"
     assert _hex_lower("0xABCDEF") == "0xabcdef"
     assert _split_txid("0xAbC/410") == ("0xabc", "410")
 
 
 def test_flat_withdrawal_fee_allowance_for_small_amounts() -> None:
-    from txclass.decode.exchanges import link_exchange_heuristic
+    from loledger.decode.exchanges import link_exchange_heuristic
     okx = _x_row("OKX", "withdrawal_to_chain", "-10.69", "USDT", 1000, txid="")
     gem = _x_row("Gemini", "deposit_from_chain", "10", "USDT", 1600, txid="")
     too_far = _x_row("Binance.US", "deposit_from_chain", "8", "USDT", 1600, txid="")  # 2.69 > 1.5 flat fee

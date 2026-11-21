@@ -40,12 +40,12 @@ class ScriptInfo:
 
 
 def load_scripts() -> dict[str, ScriptInfo]:
-    raw = yaml.safe_load(resources.files("txclass.registry").joinpath("cardano.yaml").read_text()) or {}
+    raw = yaml.safe_load(resources.files("loledger.registry").joinpath("cardano.yaml").read_text()) or {}
     return {h: ScriptInfo(str(v["venue"]), str(v["kind"])) for h, v in (raw.get("scripts") or {}).items()}
 
 
 def load_cardano_price_aliases() -> dict[str, str]:
-    raw = yaml.safe_load(resources.files("txclass.registry").joinpath("cardano.yaml").read_text()) or {}
+    raw = yaml.safe_load(resources.files("loledger.registry").joinpath("cardano.yaml").read_text()) or {}
     return {str(a): str(c) for a, c in (raw.get("price_aliases") or {}).items()}
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from txclass.taxforms import Line, Profile, TaxYear, _schedule_d, box_for, carryover_out
+from loledger.taxforms import Line, Profile, TaxYear, _schedule_d, box_for, carryover_out
 
 D = Decimal
 
@@ -36,7 +36,7 @@ def test_schedule_d_lines_from_8949_boxes_and_carryover() -> None:
 
 
 def test_taxact_csv_in_7_and_6_column_layouts() -> None:
-    from txclass.taxforms import taxact6_csv, taxact_csv
+    from loledger.taxforms import taxact6_csv, taxact_csv
 
     ty = TaxYear(2025, [_line("I", "short", "100", "80"), _line("L", "long", "50", "70")], {}, [],
                  (Decimal(0), Decimal(0)), Profile())

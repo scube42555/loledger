@@ -55,7 +55,7 @@ def norm_symbol(sym: str) -> str:
 
 
 def load_registry(chain_name: str, discovered: dict[str, tuple[bool | None, str]] | None = None) -> Registry:
-    base = resources.files("txclass.registry")
+    base = resources.files("loledger.registry")
     ref = next((base.joinpath(f) for f in (f"evm_{chain_name.lower()}.yaml", f"{chain_name.lower()}.yaml")
                 if base.joinpath(f).is_file()), None)
     reg = Registry(discovered=dict(discovered or {}))

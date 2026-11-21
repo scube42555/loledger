@@ -8,14 +8,14 @@ from typing import Any
 
 import httpx
 
-from txclass.config import load_settings
-from txclass.enrich import apply_prices
-from txclass.http import HttpClient
-from txclass.model import NATIVE_ASSET, AssetKind, Movement, TxContext
-from txclass.positions import build_positions
-from txclass.prices import PriceService, hour
-from txclass.rules import Classified, Cls
-from txclass.store import Store
+from loledger.config import load_settings
+from loledger.enrich import apply_prices
+from loledger.http import HttpClient
+from loledger.model import NATIVE_ASSET, AssetKind, Movement, TxContext
+from loledger.positions import build_positions
+from loledger.prices import PriceService, hour
+from loledger.rules import Classified, Cls
+from loledger.store import Store
 
 CHAINS = load_settings().chains
 USDC = "0x" + "c1" * 20

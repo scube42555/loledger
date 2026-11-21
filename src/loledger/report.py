@@ -194,7 +194,7 @@ def write_summary(path: Path, rows: list[Classified], positions: list[Position],
               f"{r.movement.amount.normalize():f} {r.movement.symbol} ({r.confidence:.2f}) — {r.reason[:120]}")
 
     w("\n## Unregistered contracts / scripts\n")
-    w("Add these to `src/txclass/registry/*.yaml` once identified.\n")
+    w("Add these to `src/loledger/registry/*.yaml` once identified.\n")
     w("| address / script | rows | known name |")
     w("|---|---:|---|")
     for a, n in sorted(unknown.items(), key=lambda kv: -kv[1]):

@@ -5,8 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from txclass.adapters.solana.normalize import main_program, normalize
-from txclass.config import load_settings
+from loledger.adapters.solana.normalize import main_program, normalize
+from loledger.config import load_settings
 
 SOL = load_settings().chains["Solana"]
 W, X = "Wa11et1111111111111111111111111111111111111", "Other11111111111111111111111111111111111111"
@@ -53,11 +53,11 @@ def test_received_tokens_and_failed_tx() -> None:
 def test_stake_account_discovery_and_epoch_rewards() -> None:
     from decimal import Decimal
 
-    from txclass.adapters.solana.fetch import STAKE_PROGRAM, stake_accounts
-    from txclass.adapters.solana.normalize import stake_reward_movements
-    from txclass.config import load_settings
-    from txclass.rules import RuleContext, classify_group
-    from txclass.registry import load_registry
+    from loledger.adapters.solana.fetch import STAKE_PROGRAM, stake_accounts
+    from loledger.adapters.solana.normalize import stake_reward_movements
+    from loledger.config import load_settings
+    from loledger.rules import RuleContext, classify_group
+    from loledger.registry import load_registry
 
     w, acct = "Wa11et1111111111111111111111111111111111111", "StakeAcct111111111111111111111111111111111"
     tx = {"meta": {}, "transaction": {"message": {"instructions": [

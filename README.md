@@ -1,6 +1,6 @@
-# txclass — on-chain transaction classifier
+# loledger — on-chain transaction classifier
 
-`txclass` takes a list of wallets, fetches their full on-chain history and labels every token
+`loledger` takes a list of wallets, fetches their full on-chain history and labels every token
 movement. The labels are transfers, swaps, limit-order placement/fill/cancel, LP deposit and
 withdraw, staking, spam and so on. Each label comes with a confidence score and a reason that names
 the rule or evidence behind it. The tool links orders to their fills and LP deposits to their
@@ -56,7 +56,7 @@ stake1u...,Cardano,
 - Cardano rows can be `addr1…` payment addresses or `stake1…` stake addresses. A payment address
   is resolved to its stake key, because a Cardano wallet is a stake key.
 - `Chain` is matched case-insensitively against the chain name, its aliases, or its chain id in
-  `src/txclass/settings.yaml`.
+  `src/loledger/settings.yaml`.
 - `Label` is optional and is copied into the outputs.
 
 ## Usage
@@ -181,14 +181,14 @@ on-chain balances don't follow their Transfer events.
 
 ## Extending
 
-- **Unknown contract or script in the summary:** add it to `src/txclass/registry/evm_<chain>.yaml`
+- **Unknown contract or script in the summary:** add it to `src/loledger/registry/evm_<chain>.yaml`
   (`kind` is one of router, settlement, order_book, order_router, escrow, lp_pool, lp_nft, bridge,
   yield_vault, staking, exchange, spam_distributor, limit_order_protocol). For Cardano, add it to
   `registry/cardano.yaml` under `scripts`.
 - **Missing price:** add an entry to `price_aliases` in the chain's registry file.
 - **New EVM chain:** add a block to `settings.yaml` with chain id, explorer, RPC URL, DefiLlama
   `price_chain` and `native_price_id`. Then add a registry YAML for it.
-- **New non-EVM chain (e.g. Kaspa):** write an adapter under `src/txclass/adapters/<chain>/` that
+- **New non-EVM chain (e.g. Kaspa):** write an adapter under `src/loledger/adapters/<chain>/` that
   produces `Movement` and `TxContext` objects (see `model.py`). The rules, prices, matching and
   report layers are shared across chains.
 - **Tuning heuristics:** edit `matching:` in `settings.yaml`.

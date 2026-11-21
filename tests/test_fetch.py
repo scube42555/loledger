@@ -4,10 +4,10 @@ from typing import Any
 
 import pytest
 
-from txclass.adapters.evm import fetch
-from txclass.adapters.evm.fetch import EvmFetcher, ExplorerError, check_explorer_body
-from txclass.http import TransientError
-from txclass.store import Store, canonical_params
+from loledger.adapters.evm import fetch
+from loledger.adapters.evm.fetch import EvmFetcher, ExplorerError, check_explorer_body
+from loledger.http import TransientError
+from loledger.store import Store, canonical_params
 
 from .fakes import CHAIN, OTHER, W, FakeExplorer, FakeRpc, token_row
 

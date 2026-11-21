@@ -2,7 +2,7 @@
 # matched case-insensitively against the name, its aliases, or the numeric chain id.
 db_path: data/txclass.sqlite
 
-# Heuristic matching (phase 5). See src/txclass/match.py for the meaning of each knob.
+# Heuristic matching (phase 5). See src/loledger/match.py for the meaning of each knob.
 matching:
   min_usd: 5.0               # ignore dust flows
   window_hours: 72           # max gap for exchanger swaps / bridges

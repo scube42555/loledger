@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from txclass.form1099da import Form, Row, _parse_stacked, parse_csv, reconcile, summary_totals
-from txclass.taxforms import Line
+from loledger.form1099da import Form, Row, _parse_stacked, parse_csv, reconcile, summary_totals
+from loledger.taxforms import Line
 
 CSV = b"""Form 1099-DA transaction detail,,,,,
 Digital Asset Name,Number of Units,Date Acquired,Date Sold or Disposed,Gross Proceeds,Cost Basis,Basis Reported to IRS
@@ -98,7 +98,7 @@ def test_stacked_pdf_layout() -> None:
 
 
 def test_apply_reported_proceeds(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    import txclass.form1099da as m
+    import loledger.form1099da as m
 
     monkeypatch.setattr(m, "DATA_DIR", tmp_path)
     m.import_file(2025, "Gemini", "f.csv", CSV)

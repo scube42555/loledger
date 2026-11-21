@@ -122,7 +122,7 @@ def _chain_from_dict(name: str, d: dict[str, Any]) -> ChainConfig:
 def load_settings(path: Path | None = None) -> Settings:
     load_dotenv()
     if path is None:
-        text = resources.files("txclass").joinpath("settings.yaml").read_text()
+        text = resources.files("loledger").joinpath("settings.yaml").read_text()
     else:
         text = path.read_text()
     raw = yaml.safe_load(text)

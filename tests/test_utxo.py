@@ -5,8 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from txclass.adapters.utxo.normalize import normalize
-from txclass.config import load_settings
+from loledger.adapters.utxo.normalize import normalize
+from loledger.config import load_settings
 
 DOGE = load_settings().chains["Doge"]
 A, B, C = "DAaaa", "DBbbb", "DCccc"
@@ -40,7 +40,7 @@ def test_coinjoin_style_shared_inputs_get_one_net_leg() -> None:
 
 
 def test_doge_and_kaspa_lookalikes_are_poisoning() -> None:
-    from txclass.rules import _lookalike
+    from loledger.rules import _lookalike
     w = "DTest" + "Q" * 25 + "5qC6"  # synthetic 34-char Doge-style addresses
     doge_wallets = {w}
     assert _lookalike("DTest" + "K" * 25 + "5qC6", doge_wallets) == w

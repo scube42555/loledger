@@ -12,7 +12,7 @@ from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, F
                            TextStringObject)
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from txclass.pdfforms import assemble, fill, overlay
+from loledger.pdfforms import assemble, fill, overlay
 
 
 def _n(s: str) -> NameObject:

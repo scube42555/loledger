@@ -5,14 +5,14 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from txclass.adapters.cardano.address import CHARSET, parse_address
-from txclass.adapters.cardano.fetch import CardanoFetcher, CardanoRawBundle
-from txclass.adapters.cardano.normalize import normalize
-from txclass.config import load_settings
-from txclass.decode.cardano_orders import CardanoState, ScriptInfo, classify_cardano_wallet, finalize_orders
-from txclass.registry import Registry
-from txclass.rules import Classified, Cls, RuleContext
-from txclass.store import Store
+from loledger.adapters.cardano.address import CHARSET, parse_address
+from loledger.adapters.cardano.fetch import CardanoFetcher, CardanoRawBundle
+from loledger.adapters.cardano.normalize import normalize
+from loledger.config import load_settings
+from loledger.decode.cardano_orders import CardanoState, ScriptInfo, classify_cardano_wallet, finalize_orders
+from loledger.registry import Registry
+from loledger.rules import Classified, Cls, RuleContext
+from loledger.store import Store
 
 CHAIN = load_settings().chains["Cardano"]
 S = "stake1uwallet"
@@ -186,8 +186,8 @@ def test_lp_zap_detected_by_mint_and_burn_in_settlement() -> None:
 
 
 def test_epoch_rewards_booked_in_reward_account_and_withdrawal_is_internal() -> None:
-    from txclass.adapters.cardano.normalize import epoch_start, reward_account, reward_account_movements
-    from txclass.decode.cardano_orders import classify_reward_account
+    from loledger.adapters.cardano.normalize import epoch_start, reward_account, reward_account_movements
+    from loledger.decode.cardano_orders import classify_reward_account
 
     t = tx("w1", epoch_start(560) + 100, [io("p", 0, WALLET_ADDR, S, 100)], [io("w1", 0, WALLET_ADDR, S, 109.8)],
            withdrawals=[{"stake_addr": S, "amount": "10000000"}])

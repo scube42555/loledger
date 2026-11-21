@@ -5,11 +5,11 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from txclass.adapters.sui.normalize import SUI_TYPE, normalize
-from txclass.config import load_settings
-from txclass.decode.sui_orders import classify_sui_wallet
-from txclass.registry import load_registry
-from txclass.rules import Cls, RuleContext
+from loledger.adapters.sui.normalize import SUI_TYPE, normalize
+from loledger.config import load_settings
+from loledger.decode.sui_orders import classify_sui_wallet
+from loledger.registry import load_registry
+from loledger.rules import Cls, RuleContext
 
 SUI = load_settings().chains["Sui"]
 W = "0x" + "f4" * 32

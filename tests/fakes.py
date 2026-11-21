@@ -7,8 +7,8 @@ from typing import Any
 
 import httpx
 
-from txclass.config import ChainConfig
-from txclass.http import HttpClient
+from loledger.config import ChainConfig
+from loledger.http import HttpClient
 
 CHAIN = ChainConfig(
     name="Avalanche", kind="evm", aliases=("avax",), chain_id=43114, native_symbol="AVAX",

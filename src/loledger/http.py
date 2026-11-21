@@ -44,7 +44,7 @@ class HttpClient:
     ) -> None:
         self.limiter = RateLimiter(rps, sleep=sleep)
         self.max_attempts = max_attempts
-        self.client = client or httpx.Client(timeout=timeout, headers={"User-Agent": "txclass/0.1"})
+        self.client = client or httpx.Client(timeout=timeout, headers={"User-Agent": "loledger/0.1"})
         self._sleep = sleep
         self.calls = 0
 

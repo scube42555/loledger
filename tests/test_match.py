@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from txclass.match import match_flows
-from txclass.model import AssetKind, Movement, TxContext
-from txclass.rules import Classified, Cls
+from loledger.match import match_flows
+from loledger.model import AssetKind, Movement, TxContext
+from loledger.rules import Classified, Cls
 
 T0 = 1_770_000_000
 

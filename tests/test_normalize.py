@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from txclass.adapters.evm.fetch import EvmRawBundle
-from txclass.adapters.evm.normalize import balances, normalize
-from txclass.config import ConfigError, load_settings, load_wallets
+from loledger.adapters.evm.fetch import EvmRawBundle
+from loledger.adapters.evm.normalize import balances, normalize
+from loledger.config import ConfigError, load_settings, load_wallets
 
 from .fakes import CHAIN, OTHER, ROUTER, TOKEN, W, token_row, transfer_log, tx_row
 
@@ -117,7 +117,7 @@ def test_wavax_deposit_and_withdrawal_become_legs() -> None:
 
 
 def test_atomic_changes_become_movements_with_tx_context() -> None:
-    from txclass.adapters.evm.atomic import AtomicChange
+    from loledger.adapters.evm.atomic import AtomicChange
     b = _bundle()
     b.atomic = [AtomicChange(50, Decimal("-25.2393369"))]
     b.block_ts = {50: 1_710_000_000}

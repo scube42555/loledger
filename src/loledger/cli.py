@@ -35,7 +35,7 @@ from .report import print_summary, write_csv
 from .rules import Classified, Cls, RuleContext, classify_wallet, dedupe_gas, link_same_tx_internal
 from .store import Store
 
-log = logging.getLogger("txclass")
+log = logging.getLogger("loledger")
 
 
 def _date(ts: int) -> str:

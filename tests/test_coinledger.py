@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from txclass.coinledger import load_coinledger, load_ours, report
+from loledger.coinledger import load_coinledger, load_ours, report
 
 CL_HDR = ["Internal Id", "Timestamp (UTC)", "Platform", "Account Name", "Type", "Record Type", "Asset", "Amount",
           "Blockchain Id", "Platform Id", "Description"]

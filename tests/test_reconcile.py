@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from txclass.reconcile import Row, boundary, gaps, holdings, real_rows
+from loledger.reconcile import Row, boundary, gaps, holdings, real_rows
 
 D = Decimal
 

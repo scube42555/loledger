@@ -31,7 +31,7 @@ class KoiosClient:
         self.store = store
         self.refresh_tail = refresh_tail
         key = chain.explorer_api_key()
-        headers = {"User-Agent": "txclass/0.1"}
+        headers = {"User-Agent": "loledger/0.1"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
         self.http = http or HttpClient(chain.explorer_rps, client=httpx.Client(timeout=60, headers=headers))

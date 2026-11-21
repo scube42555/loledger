@@ -27,7 +27,7 @@ DUST = Decimal("0.01")
 
 @cache
 def exchange_price_ids() -> dict[str, str]:
-    raw = yaml.safe_load(resources.files("txclass.registry").joinpath("exchanges.yaml").read_text()) or {}
+    raw = yaml.safe_load(resources.files("loledger.registry").joinpath("exchanges.yaml").read_text()) or {}
     return {str(k).upper(): str(v) for k, v in (raw.get("price_ids") or {}).items()}
 
 

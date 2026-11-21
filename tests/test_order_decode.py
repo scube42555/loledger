@@ -7,11 +7,11 @@ from typing import Any
 
 from eth_abi.abi import encode
 
-from txclass.decode.cardano_datums import decode
-from txclass.decode.evm_orders import GELATO_DEPOSIT, KYBER_CANCELED, KYBER_FILLED, annotate_gelato, annotate_kyber
-from txclass.model import AssetKind, Log, Movement, TxContext
-from txclass.registry import ContractInfo, Registry
-from txclass.rules import Classified, Cls
+from loledger.decode.cardano_datums import decode
+from loledger.decode.evm_orders import GELATO_DEPOSIT, KYBER_CANCELED, KYBER_FILLED, annotate_gelato, annotate_kyber
+from loledger.model import AssetKind, Log, Movement, TxContext
+from loledger.registry import ContractInfo, Registry
+from loledger.rules import Classified, Cls
 
 SNEK_P, SNEK_N = "279c909f348e533da5808898f87f9a14bb2c3dfbbacccd631d927a3f", "534e454b"
 

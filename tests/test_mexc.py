@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from txclass.adapters.exchange.files import parse_mexc
+from loledger.adapters.exchange.files import parse_mexc
 
 Q = '"'
 

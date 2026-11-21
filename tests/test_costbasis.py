@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from txclass.costbasis import Engine, Leg, kind
+from loledger.costbasis import Engine, Leg, kind
 
 D = Decimal
 _n = 0

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import Decimal
 
-from txclass.adapters.evm.atomic import AtomicChange, find_atomic_changes
+from loledger.adapters.evm.atomic import AtomicChange, find_atomic_changes
 
 E18 = 10**18
 

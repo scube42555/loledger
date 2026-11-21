@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from txclass.model import NATIVE_ASSET, AssetKind, Log, Movement, TxContext
-from txclass.registry import ZERO, ContractInfo, Registry
-from txclass.rules import Classified, Cls, RuleContext, TRANSFER_TOPIC, classify_wallet, dedupe_gas, link_same_tx_internal
+from loledger.model import NATIVE_ASSET, AssetKind, Log, Movement, TxContext
+from loledger.registry import ZERO, ContractInfo, Registry
+from loledger.rules import Classified, Cls, RuleContext, TRANSFER_TOPIC, classify_wallet, dedupe_gas, link_same_tx_internal
 
 from .fakes import CHAIN
 

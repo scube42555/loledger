@@ -5,9 +5,9 @@ import dataclasses
 from decimal import Decimal
 from typing import Any
 
-from txclass.model import AssetKind, Movement, TxContext
-from txclass.overrides import apply_overrides
-from txclass.rules import Classified, Cls
+from loledger.model import AssetKind, Movement, TxContext
+from loledger.overrides import apply_overrides
+from loledger.rules import Classified, Cls
 
 
 def _row(h: str, cp: str) -> Classified:
@@ -33,8 +33,8 @@ def test_override_by_counterparty_and_by_hash() -> None:
 
 
 def test_gift_recipients_are_not_own_wallets_and_sends_to_them_are_gifts(tmp_path: Any) -> None:
-    from txclass.config import load_settings, load_wallets, split_gifts
-    from txclass.overrides import gift_rules
+    from loledger.config import load_settings, load_wallets, split_gifts
+    from loledger.overrides import gift_rules
 
     p = tmp_path / "a.csv"
     p.write_text("Address,Chain,Label\nmine,Bitcoin,Cold\nkid,Bitcoin,Kid Gift\nshop,Bitcoin,Giftshop\n")
@@ -48,7 +48,7 @@ def test_gift_recipients_are_not_own_wallets_and_sends_to_them_are_gifts(tmp_pat
 
 
 def test_injective_0x_address_converts_to_its_inj1_account() -> None:
-    from txclass.config import evm_to_bech32
+    from loledger.config import evm_to_bech32
 
     assert evm_to_bech32("0x" + "00" * 20, "cosmos") == "cosmos1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnrql8a"  # well-known
     assert evm_to_bech32("0x" + "AB" * 20, "inj").startswith("inj1")
