@@ -111,7 +111,7 @@ After classification:
   cache) and per-year `TaxYear` caches. Clear `_years[year]` when anything that affects a year changes.
 - **Pages:**
   - **Portfolio:** `/portfolio?account=…`.
-  - **Accounts:** `/accounts`, backed by `web/accounts.py`. Wallets are grouped by chain and read straight
+  - **Accounts:** `/accounts`, backed by `web/accounts.py`. Wallets are grouped by chain (largest balance first) and read straight
     from addresses.csv, with exchanges listed separately. The Add form appends to addresses.csv. Re-sync
     runs the CLI in a background subprocess, one job at a time (`Syncer`). For one wallet that's
     `fetch --refresh` on `data/sync_one.csv` and then `run`; for all wallets it's `run --refresh`. Then

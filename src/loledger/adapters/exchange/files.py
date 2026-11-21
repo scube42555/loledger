@@ -456,7 +456,7 @@ def parse_gemini(path: Path, chain: str = "Gemini", api: dict[str, list[dict[str
             if bal and abs(_gemini_num(bal) - running[a]) > _display_tol(bal):
                 bad_rows += 1
                 if bad_rows <= 3:
-                    log.warning("  Gemini row %d (%s %s): running %s %s != balance column %s", i + 2, r["Date"], typ,
+                    log.debug("  Gemini row %d (%s %s): running %s %s != balance column %s", i + 2, r["Date"], typ,
                                 running[a], a, bal)
                 running[a] = _gemini_num(bal)  # resync so one bad row is reported once
     totals = next((r for r in reversed(rows) if not r["Type"].strip()), None)

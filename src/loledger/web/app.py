@@ -106,6 +106,9 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
                                            key=lambda a: (-(a["mv"] or 0), a["symbol"]))
             groups.setdefault(w.chain, []).append({"w": w, "v": v, "dup": dup, "account": keys[0] if keys else "",
                                                    "assets": assets})
+        for rs in groups.values():  # largest balance first; gift / unsupported / duplicate rows ("—") last
+            rs.sort(key=lambda r: (r["v"] is None, r["w"].gift, -(r["v"]["mv"] if r["v"] else 0),
+                                   r["w"].label.lower(), r["w"].address))
         def ex_source(name: str) -> str:
             from ..adapters.exchange import gemini, okx
 
