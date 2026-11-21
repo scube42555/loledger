@@ -1,7 +1,7 @@
 # Cardano script registry: payment-credential (script) hash -> venue.
 # kind: order (batcher order/request script), lp_order, staking_order
 # Identified 2026-11-18 from the CIP-20 (674) messages of the txs that create and spend outputs
-# at each script in the user's own history (see `classify` summary for unregistered scripts).
+# at each script in the user's own history (see `loledger` summary for unregistered scripts).
 scripts:
   00fb107bfbd51b3a5638867d3688e986ba38ff34fb738f5bd42b20d5: {venue: muesliswap-orderbook, kind: order}
   c3e28c36c3447315ba5a56f33da6a6ddc1770a876a8d9f0cb3a97c4c: {venue: minswap-v2, kind: order}

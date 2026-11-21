@@ -1,8 +1,8 @@
 """CLI entry point.
 
-  classify fetch   --addresses addresses.csv          # fetch + cache + normalize (phase 1)
-  classify verify  --addresses addresses.csv          # computed vs live on-chain balances
-  classify movements --out movements.csv              # dump the normalized movements table
+  loledger fetch   --addresses addresses.csv          # fetch + cache + normalize (phase 1)
+  loledger verify  --addresses addresses.csv          # computed vs live on-chain balances
+  loledger movements --out movements.csv              # dump the normalized movements table
 """
 
 from __future__ import annotations
@@ -550,7 +550,7 @@ def cmd_verify(args: argparse.Namespace, settings: Settings, store: Store) -> in
         snap["unlisted_evm"] = _scan_unlisted_evm(wallets, settings)
     snap["ts"] = int(time.time())
     store.put_raw("verify", "live_balances", {}, snap)
-    print(f"\n{bad} mismatching balance(s); live snapshot of {len(_LIVE)} wallet(s) saved for `classify reconcile`")
+    print(f"\n{bad} mismatching balance(s); live snapshot of {len(_LIVE)} wallet(s) saved for `loledger reconcile`")
     return 0
 
 
@@ -1126,7 +1126,7 @@ def cmd_compare(args: argparse.Namespace, settings: Settings, store: Store) -> i
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="classify", description="On-chain transaction classifier")
+    p = argparse.ArgumentParser(prog="loledger", description="On-chain transaction classifier")
     p.add_argument("--db", help="SQLite path (default from settings.yaml)")
     p.add_argument("--settings", help="alternative settings.yaml")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -1198,7 +1198,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0].startswith("--") and not {"-h", "--help"} & set(argv[:1]) \
             and not any(a in ("fetch", "verify", "movements", "run", "compare", "reconcile", "basis", "tax", "serve") for a in argv):
-        argv.insert(0, "run")  # `classify --addresses a.csv --out classified.csv`
+        argv.insert(0, "run")  # `loledger --addresses a.csv --out classified.csv`
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")

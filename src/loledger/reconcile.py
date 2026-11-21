@@ -3,7 +3,7 @@
 The wallet list + exchange accounts are meant to be *everything* the user holds, so:
 
 1. Holdings: each (chain, wallet) ending balance from classified rows (gas included, fake tokens
-   excluded) vs the live balance snapshot written by `classify verify`.
+   excluded) vs the live balance snapshot written by `loledger verify`.
 2. Gaps: a running balance that goes negative means an inflow is missing (or arrives out of order).
 3. Boundary flows: value entering from, or leaving to, an address outside the list. Each needs a
    story for cost basis (income? purchase? own unlisted wallet?) or disposal (sale? gift? payment?).
@@ -285,7 +285,7 @@ def report(rows_all: list[Row], live_snapshot: dict[str, Any], md: Path, holding
     gs = gaps(rows)
     fl, dust = boundary(rows, min_usd)
     when = datetime.fromtimestamp(int(live_snapshot.get("ts", 0)), UTC).strftime("%Y-%m-%d %H:%M UTC") \
-        if live_snapshot else "never (run `classify verify` first)"
+        if live_snapshot else "never (run `loledger verify` first)"
 
     with open(holdings_csv, "w", newline="") as f:
         w = csv.writer(f)

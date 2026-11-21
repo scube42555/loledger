@@ -62,11 +62,11 @@ stake1u...,Cardano,
 ## Usage
 
 ```bash
-classify --addresses addresses.csv --out classified.csv   # full pipeline (= `classify run …`)
-classify fetch  --addresses addresses.csv                # fetch + cache + normalize only
-classify verify --addresses addresses.csv                # computed vs live on-chain balances
-classify movements --out movements.csv                   # dump the normalized legs
-classify compare --coinledger exports/coinledger.io/<export>.csv   # validation-only report
+loledger --addresses addresses.csv --out classified.csv   # full pipeline (= `loledger run …`)
+loledger fetch  --addresses addresses.csv                # fetch + cache + normalize only
+loledger verify --addresses addresses.csv                # computed vs live on-chain balances
+loledger movements --out movements.csv                   # dump the normalized legs
+loledger compare --coinledger exports/coinledger.io/<export>.csv   # validation-only report
 ```
 
 `compare` checks `classified.csv` against a CoinLedger export and writes `coinledger_comparison.md`

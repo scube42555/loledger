@@ -7,7 +7,7 @@ Method (user-confirmed 2026-11-19; HIFO is what the 2022-2024 returns were filed
   (lots that travelled with transfers are matched by lot id first; the rest fill remaining capacity).
 - From 2025-01-01: HIFO within each wallet / exchange account (a standing order kept in the user's records);
   transfers between own wallets carry basis and acquisition date, moving lots in the same HIFO order.
-  Both methods are settings (Engine(pre=..., post=...), `classify basis --method-pre/--method-post`).
+  Both methods are settings (Engine(pre=..., post=...), `loledger basis --method-pre/--method-post`).
 - Network/exchange fees paid in crypto are small disposals at FMV; their value is added to the basis
   of what the same transaction acquired, or deducted from its sale proceeds.
 

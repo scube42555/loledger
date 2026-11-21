@@ -1,6 +1,6 @@
 """Local web app: portfolio, per-year tax report with exports, and Form 1099-DA import.
 
-Run with `classify serve` (binds to 127.0.0.1 only). Everything is computed locally from classified.csv
+Run with `loledger serve` (binds to 127.0.0.1 only). Everything is computed locally from classified.csv
 and manual.yaml; the only outbound calls are DefiLlama price lookups and, once per form, the blank IRS PDFs.
 """
 
