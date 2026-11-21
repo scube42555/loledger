@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -244,3 +245,21 @@ def test_flat_withdrawal_fee_allowance_for_small_amounts() -> None:
     too_far = _x_row("Binance.US", "deposit_from_chain", "8", "USDT", 1600, txid="")  # 2.69 > 1.5 flat fee
     notes = link_exchange_heuristic([okx, gem, too_far], {}, {})
     assert len(notes) == 1 and gem.linked_tx_hash == okx.tx.tx_hash and too_far.linked_tx_hash == ""
+
+
+def test_okx_overlapping_exports_are_counted_once(tmp_path: Path) -> None:
+    from loledger.adapters.exchange.files import parse_okx
+
+    head = "UID:1,Account Type:Trading,Time Zone:UTC0\n"
+    trade_cols = "id,Order id,Time,Symbol,Balance Change,Fee,Fee Unit,Balance Unit,Balance\n"
+    fund_cols = "id,Time,Type,Symbol,Amount,Before Balance\n"
+    (tmp_path / "trading_old.csv").write_text(head + trade_cols + "1,o1,2026-11-01 10:00:00,BTC-USDT,0.01,0,BTC,BTC,0.01\n")
+    (tmp_path / "trading_new.csv").write_text(head + trade_cols + "1,o1,2026-11-01 10:00:00,BTC-USDT,0.01,0,BTC,BTC,0.01\n"
+                                              "2,o2,2026-11-20 10:00:00,BTC-USDT,0.02,0,BTC,BTC,0.03\n")
+    (tmp_path / "funding_old.csv").write_text(head + fund_cols + "9,2026-10-01 00:00:00,Deposit,USDT,100,0\n")
+    (tmp_path / "funding_new.csv").write_text(head + fund_cols + "9,2026-10-01 00:00:00,Deposit,USDT,100,0\n")
+    ledger = parse_okx(tmp_path)
+    btc = sum((m.amount for m in ledger.moves if m.symbol == "BTC"), Decimal(0))
+    usdt = sum((m.amount for m in ledger.moves if m.symbol == "USDT"), Decimal(0))
+    assert (btc, usdt) == (Decimal("0.03"), Decimal("100"))
+    assert any("2 row(s) appear in more than one export" in c for c in ledger.checks)

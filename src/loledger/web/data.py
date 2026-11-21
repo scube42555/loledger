@@ -129,8 +129,13 @@ class AppData:
         timeline: dict[str, list[tuple[int, Decimal]]] = defaultdict(list)
         ids: dict[str, tuple[int, str]] = {}  # fam -> (priority, id)
         symbol: dict[str, str] = {}
+        from ..costbasis import account
+
+        last: dict[str, int] = defaultdict(int)  # engine account -> latest activity in the data
         with open(path, newline="") as f:
             for r in csv.DictReader(f):
+                acct = account(r["chain"], r["wallet"])
+                last[acct] = max(last[acct], int(r["timestamp"]))
                 if not r["usd_price"] or r["subtype"].startswith("spam"):
                     continue
                 fam = family(r["token"])
@@ -160,6 +165,7 @@ class AppData:
                     timeline[fam].append((ts, abs(Decimal(str(e["usd"])) / Decimal(str(e["amount"])))))
         for v in timeline.values():
             v.sort()
+        self.last_activity = {a: datetime.fromtimestamp(ts, UTC) for a, ts in last.items()}
         self.timeline = dict(timeline)
         self.price_ids = {f: v[1] for f, v in ids.items()}
         self.symbol = symbol

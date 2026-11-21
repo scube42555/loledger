@@ -48,13 +48,19 @@
     <span class="muted small">read from export files in <code>exports/</code> or API keys in <code>.env</code>; re-read on every sync</span>
     <span class="right">{{ exchanges|selectattr('v')|map(attribute='v')|map(attribute='mv')|sum|money(cents=False) }}</span></div>
   <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
-    <thead><tr><th>Exchange</th><th></th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
+    <thead><tr><th>Exchange</th><th>Source</th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
     <tbody>
     {% for e in exchanges %}{% set id = 'x' ~ loop.index %}
-      <tr class="asset" onclick="toggleDetail('{{ id }}')" title="Show what is held on {{ e.name }}"><td>{{ caret(id) }}{{ e.name }}</td><td></td>
+      <tr class="asset" onclick="toggleDetail('{{ id }}')" title="Show what is held on {{ e.name }}"><td>{{ caret(id) }}{{ e.name }}</td>
+        <td class="muted small">{{ e.source }}{% if e.last %}<br>data through {{ e.last.strftime('%b %d, %Y') }}{% endif %}</td>
         {% if e.v %}<td class="r">{{ e.v.assets }}</td><td class="r">{{ e.v.cost|money(cents=False) }}</td>
           <td class="r"><a href="{{ url_for('portfolio', account=e.name) }}" onclick="event.stopPropagation()" title="Open in Portfolio">{{ e.v.mv|money(cents=False) }}</a></td>
-        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}<td></td></tr>
+        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}
+        <td class="r"><form method="post" action="{{ url_for('account_sync') }}" class="inline" onclick="event.stopPropagation()">
+            <input type="hidden" name="exchange" value="{{ e.name }}">
+            <button class="btn ghost small" {{ 'disabled' if job and job.running }}
+              title="{{ 'Fetch new activity from the API, then re-classify' if 'API' in e.source else 'Re-read ' ~ e.source ~ ' (download newer exports there first), then re-classify' }}">↻ Re-sync</button>
+          </form></td></tr>
       {{ detail(id, e.assets, 6) }}
     {% endfor %}
     </tbody>

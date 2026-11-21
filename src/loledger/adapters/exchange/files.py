@@ -410,7 +410,21 @@ def parse_okx(folder: Path, chain: str = "OKX") -> Ledger:
     w = "okx:account"
     fmt = "%Y-%m-%d %H:%M:%S"
     checks: list[str] = []
+    # newer exports overlap older ones: merge each kind across files, one row per OKX bill id
+    trading: dict[str, dict[str, str]] = {}
+    funding: dict[str, dict[str, str]] = {}
+    dupes = 0
     for name, rows in _okx_csvs(folder):
+        kind = trading if rows and "Order id" in rows[0] else funding if rows and "Before Balance" in rows[0] else None
+        if kind is None:
+            continue
+        for r in rows:
+            if r["id"] in kind:
+                dupes += 1
+            kind[r["id"]] = r
+    if dupes:
+        checks.append(f"OKX: {dupes} row(s) appear in more than one export (overlapping date ranges); counted once")
+    for rows in (list(trading.values()), list(funding.values())):
         if rows and "Order id" in rows[0]:  # trading bill history: one row per currency per fill
             last_bal: dict[str, Decimal] = {}
             for r in sorted(rows, key=lambda r: (r["Time"], r["id"])):

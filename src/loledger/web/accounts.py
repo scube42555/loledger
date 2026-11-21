@@ -144,6 +144,11 @@ class Syncer:
         return self._start("Re-sync all accounts", [self._cli("run", "--addresses", ADDRESSES, "--out", "classified.csv",
                                                               "--refresh")])
 
+    def sync_exchange(self, name: str) -> SyncJob:
+        """Exchanges are re-read on every run: API accounts fetch their recent days live, export-file exchanges
+        re-read the files under exports/ (download newer exports there first)."""
+        return self._start(f"Re-sync {name}", [self._cli("run", "--addresses", ADDRESSES, "--out", "classified.csv")])
+
     def sync_one(self, w: Wallet) -> SyncJob:
         one = self.root / ONE_WALLET_CSV
         one.parent.mkdir(parents=True, exist_ok=True)
