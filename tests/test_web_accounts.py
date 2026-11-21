@@ -22,10 +22,10 @@ def _csv(tmp_path: Path, body: str) -> Path:
 def test_read_wallets_canonical_chain_gift_and_unsupported(tmp_path: Path) -> None:
     root = _csv(tmp_path, "0xAbC0000000000000000000000000000000000001,eth,Main\n"
                           "0xAbC0000000000000000000000000000000000002,Ethereum,Bob Gift\n"
-                          "cosmos1xyz,Cosmos,Atom\n")
+                          "osmo1xyz,Osmosis,Osmo\n")
     ws = acc.read_wallets(root, S)
     assert [(w.chain, w.supported, w.gift) for w in ws] == [("Ethereum", True, False), ("Ethereum", True, True),
-                                                           ("Cosmos", False, False)]
+                                                           ("Osmosis", False, False)]
     assert ws[0].key == "Ethereum|0xabc0000000000000000000000000000000000001"
 
 
@@ -41,10 +41,10 @@ def test_validate_rejects_bad_duplicate_and_exchange(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="addr1"):
         acc.validate(S, "Cardano", "Ae2abc", ws)
     with pytest.raises(ValueError, match="commas"):
-        acc.validate(S, "Cosmos", "cosmos1,x", ws)
+        acc.validate(S, "Osmosis", "osmo1,x", ws)
     assert acc.validate(S, "base", "0xAbC0000000000000000000000000000000000001", ws) == (
         "Base", "0xAbC0000000000000000000000000000000000001")  # same address on another chain is fine
-    assert acc.validate(S, "Cosmos", " cosmos1abc ", ws) == ("Cosmos", "cosmos1abc")  # unsupported chains allowed
+    assert acc.validate(S, "Osmosis", " osmo1abc ", ws) == ("Osmosis", "osmo1abc")  # unsupported chains allowed
 
 
 def test_append_wallet_keeps_file_valid_without_trailing_newline(tmp_path: Path) -> None:

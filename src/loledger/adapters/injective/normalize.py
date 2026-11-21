@@ -1,4 +1,4 @@
-"""Injective (Cosmos SDK) tx logs -> wallet-perspective Movements.
+"""Cosmos SDK tx logs -> wallet-perspective Movements (Injective; also used by the Cosmos Hub adapter).
 
 transfer events (sender, recipient, amount) give exact legs with counterparties; the fee is booked
 as gas for the fee payer. Two credits happen without a tx and are synthesized from tx data:
@@ -9,6 +9,7 @@ as gas for the fee payer. Two credits happen without a tx and are synthesized fr
 from __future__ import annotations
 
 import re
+import time
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
@@ -39,15 +40,19 @@ def _ts(s: str) -> int:
 
 
 def normalize(chain: ChainConfig, wallet: str, history: list[dict[str, Any]], modules: dict[str, str],
-              denom_meta: Any) -> tuple[list[Movement], dict[str, TxContext]]:
-    """denom_meta(denom) -> (symbol, decimals)."""
+              denom_meta: Any, native_denom: str = "inj", slug: str = "injective",
+              leg_prefix: str = "inj", now: int | None = None) -> tuple[list[Movement], dict[str, TxContext]]:
+    """denom_meta(denom) -> (symbol, decimals). history items: hash, block_number, block_timestamp, code, gas_fee
+    {payer, amount}, messages [{type, value}], logs [{events}] (one log per message), memo."""
+    dec_native = chain.native_decimals
+    now = int(time.time()) if now is None else now  # unbonding still in progress: not back in the wallet yet
     moves: list[Movement] = []
     txs: dict[str, TxContext] = {}
     deposits: dict[str, tuple[int, str, int, str]] = {}  # nonce -> (amount, token, earliest ts, eth sender)
 
     def mk(h: str, leg: str, ts: int, blk: int, denom: str, raw: int, cp: str, source: str) -> Movement:
-        native = denom == "inj"
-        sym, dec = (chain.native_symbol, 18) if native else denom_meta(denom)
+        native = denom == native_denom
+        sym, dec = (chain.native_symbol, dec_native) if native else denom_meta(denom)
         return Movement(chain=chain.name, tx_hash=h, leg_id=leg, block=blk, timestamp=ts, wallet=wallet,
                         asset_id=NATIVE_ASSET if native else denom, asset_kind=AssetKind.NATIVE if native else AssetKind.ERC20,
                         symbol=sym, decimals=dec, amount=scale(raw, dec), counterparty=cp, source=source)
@@ -57,7 +62,7 @@ def normalize(chain: ChainConfig, wallet: str, history: list[dict[str, Any]], mo
         ok = int(t.get("code") or 0) == 0
         fee = t.get("gas_fee") or {}
         payer = str(fee.get("payer") or "")
-        fee_inj = sum(int(c["amount"]) for c in fee.get("amount") or [] if c.get("denom") == "inj")
+        fee_inj = sum(int(c["amount"]) for c in fee.get("amount") or [] if c.get("denom") == native_denom)
         msg_types = [str(m.get("type")) for m in t.get("messages") or []]
         legs: list[Movement] = []
         net: dict[tuple[str, str, str], int] = defaultdict(int)  # (denom, counterparty, source) -> signed raw
@@ -74,10 +79,12 @@ def normalize(chain: ChainConfig, wallet: str, history: list[dict[str, Any]], mo
                     elif e["type"] == "unbond" and any("MsgUndelegate" in m for m in msg_types):
                         for raw, denom in coins(str(attrs.get("amount", ""))):
                             when = _ts(str(attrs.get("completion_time", t["block_timestamp"])))
+                            if when > now:
+                                continue
                             legs.append(mk(f"unbond:{h}", "unbonding_complete", when, blk, denom, raw,
-                                           "injective:not_bonded_pool", "unbonding_complete"))
+                                           f"{slug}:not_bonded_pool", "unbonding_complete"))
                             txs[f"unbond:{h}"] = TxContext(chain=chain.name, tx_hash=f"unbond:{h}", block=blk, timestamp=when,
-                                                           tx_from="", tx_to="injective:unbonding", method_id="",
+                                                           tx_from="", tx_to=f"{slug}:unbonding", method_id="",
                                                            function_name="unbonding_complete", is_error=False,
                                                            gas_fee=Decimal(0), value=Decimal(0))
                 # coin_spent/coin_received are complete (delegations emit no `transfer`); the counterparty is the
@@ -103,14 +110,14 @@ def normalize(chain: ChainConfig, wallet: str, history: list[dict[str, Any]], mo
         for (denom, cp, src), raw in net.items():
             if raw:
                 n_leg += 1
-                legs.append(mk(h, f"inj:{n_leg}", ts, blk, denom, raw, cp, src))
+                legs.append(mk(h, f"{leg_prefix}:{n_leg}", ts, blk, denom, raw, cp, src))
         main_legs = [m for m in legs if m.tx_hash == h]
         moves.extend(legs)
         if main_legs or payer == wallet:
             txs[h] = TxContext(chain=chain.name, tx_hash=h, block=blk, timestamp=ts, tx_from=payer,
                                tx_to=msg_types[0] if msg_types else "", method_id="",
                                function_name=",".join(x.rsplit(".", 1)[-1] for x in msg_types[:3]), is_error=not ok,
-                               gas_fee=scale(fee_inj, 18) if payer else Decimal(0), value=Decimal(0),
+                               gas_fee=scale(fee_inj, dec_native) if payer else Decimal(0), value=Decimal(0),
                                meta={"msg_types": msg_types, "memo": t.get("memo") or ""})
     for n, (raw, token, ts, eth_sender) in deposits.items():
         denom = "inj" if token == INJ_ERC20 else f"peggy{token}"

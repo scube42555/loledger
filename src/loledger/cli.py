@@ -72,6 +72,9 @@ def cmd_fetch(args: argparse.Namespace, settings: Settings, store: Store) -> int
         if chain.kind == "injective":
             _fetch_injective(chain, ws, store)
             continue
+        if chain.kind == "cosmos":
+            _fetch_cosmos(args, chain, ws, store)
+            continue
         if chain.kind == "hedera":
             _fetch_hedera(chain, ws, store)
             continue
@@ -299,6 +302,36 @@ def _fetch_injective(chain: Any, ws: list[WalletSpec], store: Store) -> None:
         _print_wallet_summary(w, {"txs": hist}, moves, txs)
 
 
+def _fetch_cosmos(args: argparse.Namespace, chain: Any, ws: list[WalletSpec], store: Store) -> None:
+    """Cosmos SDK chains through archive nodes (adapters/cosmos): Cosmos Hub from a tx list copied from an explorer
+    (its archive can't search by address); dYdX by address search, plus an optional list."""
+    from .adapters.cosmos.fetch import PROFILES, CosmosClient, read_tx_list
+    from .adapters.cosmos.normalize import normalize as normalize_cosmos
+
+    try:
+        client = CosmosClient(chain, store, refresh=args.refresh)
+        refs = read_tx_list(Path(chain.export), required=not PROFILES[chain.name].search) if chain.export else []
+    except ConfigError as e:
+        log.warning("skipping %d %s wallet(s): %s", len(ws), chain.name, e)
+        return
+    print(f"\n== {chain.name} (archive node" + (", address search" if client.p.search else "")
+          + (f", transactions listed in {chain.export}" if refs else "") + ")")
+    modules = client.module_accounts()
+    for w in ws:
+        if not client.p.search and not any(r.wallet == w.address for r in refs):
+            log.warning("  %s %s: no transactions listed in %s", chain.name, w.address, chain.export)
+        try:
+            hist = client.history(w.address, refs)
+            credits = client.bridge_credits(w.address, hist)
+            moves, txs = normalize_cosmos(chain, w.address, hist, modules, client.denom_trace, credits)
+        except Exception as e:
+            log.error("  %s %s: fetch failed (%s: %s)", chain.name, w.address, type(e).__name__, str(e)[:200])
+            continue
+        store.replace_wallet_movements(chain.name, w.address, moves)
+        store.upsert_txs(txs.values())
+        _print_wallet_summary(w, {"txs": hist}, moves, txs)
+
+
 def _fetch_algorand(args: argparse.Namespace, chain: Any, ws: list[WalletSpec], store: Store) -> None:
     from .adapters.algorand.fetch import AlgorandClient
     from .adapters.algorand.normalize import normalize as normalize_algo
@@ -516,6 +549,7 @@ def cmd_verify(args: argparse.Namespace, settings: Settings, store: Store) -> in
     bad += _safe_verify(lambda: _verify_sui([w for w in wallets if w.chain.kind == "sui"], store))
     bad += _safe_verify(lambda: _verify_algorand([w for w in wallets if w.chain.kind == "algorand"], store))
     bad += _safe_verify(lambda: _verify_injective([w for w in wallets if w.chain.kind == "injective"], store))
+    bad += _safe_verify(lambda: _verify_cosmos([w for w in wallets if w.chain.kind == "cosmos"], store))
     bad += _safe_verify(lambda: _verify_hedera([w for w in wallets if w.chain.kind == "hedera"], store))
     bad += _safe_verify(lambda: _verify_chia([w for w in wallets if w.chain.kind == "chia"], store))
     for w in wallets:
@@ -841,6 +875,38 @@ def _verify_injective(ws: list[WalletSpec], store: Store) -> int:
     return bad
 
 
+def _verify_cosmos(ws: list[WalletSpec], store: Store) -> int:
+    """Computed vs live bank balance (delegations leave the bank balance, in both)."""
+    from .adapters.cosmos.fetch import CosmosClient
+
+    bad = 0
+    for w in ws:
+        client = CosmosClient(w.chain, store)
+        moves = store.load_movements(w.chain.name, w.address)
+        txs = store.load_txs(w.chain.name)
+        computed: dict[str, Decimal] = defaultdict(Decimal)
+        dec: dict[str, int] = {"native": w.chain.native_decimals}
+        for m in moves:
+            computed[m.asset_id] += m.amount
+            dec[m.asset_id] = m.decimals
+        computed["native"] -= sum((t.gas_fee for t in txs.values() if t.tx_from == w.address), Decimal(0))
+        staked = client.staked(w.address)  # delegated coins left the bank balance when delegated, as computed
+        nd = client.p.native_denom
+        live = {("native" if d == nd else d): scale(v, dec.get("native" if d == nd else d, 0))
+                for d, v in client.balances(w.address).items()}
+        _record(w.chain.name, w.address, live)
+        print(f"\n{w.address}  ({len(moves)} movements; bank balance; "
+              f"{scale(staked.get(nd, 0), w.chain.native_decimals)} {w.chain.native_symbol} delegated/unbonding not included)")
+        for k in sorted(set(computed) | set(live), key=lambda k: (k != "native", k)):
+            c, o = computed.get(k, Decimal(0)), live.get(k, Decimal(0))
+            ok = c == o
+            if ok and k != "native":
+                continue
+            bad += 0 if ok else 1
+            print(f"  {w.chain.native_symbol if k == 'native' else k[:16]:16} {c:>24f} {o:>24f}{'' if ok else '  <-- MISMATCH'}")
+    return bad
+
+
 def _verify_hedera(ws: list[WalletSpec], store: Store) -> int:
     from .adapters.hedera.fetch import HederaClient
 
@@ -974,7 +1040,8 @@ def cmd_run(args: argparse.Namespace, settings: Settings, store: Store) -> int:
     unknown: dict[str, int] = {}
     names: dict[str, str] = {}
     for chain_name in dict.fromkeys(w.chain.name for w in wallets
-                                    if w.chain.kind in ("evm", "utxo", "solana", "algorand", "injective", "hedera", "chia")):
+                                    if w.chain.kind in ("evm", "utxo", "solana", "algorand", "injective", "cosmos",
+                                                        "hedera", "chia")):
         chain = settings.chains[chain_name]
         info = store.get_address_info(chain_name)
         ctx = RuleContext(chain=chain, wallets=wallet_set, registry=load_registry(chain_name, info))

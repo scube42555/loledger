@@ -60,9 +60,9 @@
     <tbody>
     {% for r in a.rows %}
       <tr class="asset {{ 'more' if loop.index > 12 and not show_all }}" data-s="{{ r.symbol|lower }}" data-i="{{ loop.index }}"
-          onclick="toggleHolders({{ loop.index }})" title="Show the accounts holding {{ r.symbol }}">
+          onclick="toggleHolders({{ loop.index }})" title="Show where {{ r.symbol }} is held: {{ r.sources }}">
         <td><span class="caret" id="caret-{{ loop.index }}">▸</span><span class="sym">{{ r.symbol[:1] }}</span><b>{{ r.qty|qty }}</b> {{ r.symbol }}
-          <span class="muted small">· {{ r.holders|length }} account{{ 's' if r.holders|length != 1 }}</span></td>
+          <span class="muted small" title="{{ r.sources }}">· {{ r.holders|length }} source{{ 's' if r.holders|length != 1 }}</span></td>
         <td><div class="bar"><span style="width: {{ [r.alloc, 100]|min }}%"></span></div><span class="small">{{ '%.0f'|format(r.alloc) if r.alloc >= 1 else '< 1' }}%</span></td>
         <td class="r">{{ r.price|price }}</td>
         <td class="r {{ 'pos' if (r.chg24 or 0) >= 0 else 'neg' }}">{{ '%+.2f%%'|format(r.chg24) if r.chg24 is not none else '—' }}</td>
@@ -74,11 +74,12 @@
       <tr class="holders" id="holders-{{ loop.index }}" hidden>
         <td colspan="8">
           <table class="t compact inner">
-            <thead><tr><th>Account</th><th class="r">Balance</th><th>Share</th><th class="r">Cost basis</th>
+            <thead><tr><th>Source</th><th>Type</th><th class="r">Balance</th><th>Share</th><th class="r">Cost basis</th>
               <th class="r">Market value</th><th class="r">Unrealized</th></tr></thead>
             <tbody>
             {% for h in r.holders %}
               <tr><td>{% if not account %}<a href="?account={{ h.account|urlencode }}" onclick="event.stopPropagation()">{{ h.label }}</a>{% else %}{{ h.label }}{% endif %}</td>
+                <td><span class="chip kind-{{ h.kind|lower|replace(' ', '-')|replace('/', '') }}">{{ h.kind }}</span></td>
                 <td class="r"><b>{{ h.qty|qty }}</b> {{ r.symbol }}</td>
                 <td><div class="bar"><span style="width: {{ [h.share, 100]|min }}%"></span></div><span class="small">{{ '%.1f'|format(h.share) if h.share >= 0.1 else '< 0.1' }}%</span></td>
                 <td class="r">{{ h.cost|money }}</td><td class="r">{{ h.mv|money }}</td>

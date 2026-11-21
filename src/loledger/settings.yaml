@@ -126,6 +126,26 @@ chains:
     native_price_id: "coingecko:injective-protocol"
     rpc_rps: 3                   # official explorer API + LCD, keyless
     dust_native: "0.000001"      # MultiSend airdrops of 1e-18 INJ seen
+  Cosmos:
+    kind: cosmos                 # Cosmos Hub; public archive node, driven by a list of the wallet's txs (see adapter)
+    aliases: [cosmoshub, cosmos hub, atom]
+    chain_id: null
+    native_symbol: ATOM
+    native_decimals: 6
+    native_price_id: "coingecko:cosmos"
+    rpc_rps: 2                   # archive node limit is 5 req/s per IP
+    export: exports/cosmos/transactions.csv   # Address,Height,Hash[,Explorer]: copied from an explorer
+    dust_native: "0.000001"
+  dYdX:
+    kind: cosmos                 # dYdX chain (v4); archive node with tx search (Polkachu); Ethereum-bridge credits rebuilt
+    aliases: [dydx, dydx chain, dydx-chain]
+    chain_id: null
+    native_symbol: DYDX
+    native_decimals: 18
+    native_price_id: "coingecko:dydx-chain"
+    rpc_rps: 3                   # Polkachu archive: 300 req/min
+    export: exports/dydx/transactions.csv   # optional: txs search can't find (bridge acknowledgement), full hashes
+    dust_native: "0.000001"
   Hedera:
     kind: hedera
     aliases: [hbar]

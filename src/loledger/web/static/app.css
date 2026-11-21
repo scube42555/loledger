@@ -114,3 +114,6 @@ h3.sub { margin-top: 18px; }
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .t.fixed { table-layout: fixed; } .t.fixed td:first-child { overflow-wrap: anywhere; }
+.chip.kind-exchange { background: var(--warn-bg); color: var(--c2); border: 1px solid var(--warn-line); }
+.chip.kind-wallet { color: var(--accent); }
+.t.inner .chip { margin-left: 0; }

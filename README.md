@@ -8,11 +8,23 @@ withdrawals, prices everything in USD at the time it happened, and writes a summ
 
 Supported:
 - **EVM:** Avalanche C-Chain, Ethereum, Base, Polygon, Arbitrum.
-- **Other chains:** Cardano, Solana, Sui, Algorand, Injective, Hedera, Chia, Bitcoin, Doge, Kaspa.
+- **Other chains:** Cardano, Solana, Sui, Algorand, Injective, Cosmos Hub, dYdX, Hedera, Chia, Bitcoin, Doge, Kaspa.
 - **Exchanges:** Crypto.com (API), and MEXC, Gemini, OKX, Binance.US and Coinbase (export files in `exports/`).
 
-Wallets on other chains (Cosmos, for example) can still be listed. They are skipped with a warning, and
+Wallets on other chains (Osmosis, for example) can still be listed. They are skipped with a warning, and
 their events can be entered in `manual.yaml`.
+
+**Cosmos Hub** needs a list of each wallet's transactions in `exports/cosmos/transactions.csv` (columns
+`Address,Height,Hash`, plus an optional `Explorer` note). Public Cosmos nodes only keep about the last year,
+and the one public archive node can't search by address. So copy each transaction's block height and hash
+from a block explorer; the shortened form the explorer shows (`75EFBE5E...A176736671`) is enough. Every
+listed transaction is then fetched in full from the archive node. `loledger verify` compares the result with
+the live balance, which shows whether any transaction is missing from the list.
+
+**dYdX** is found by address on a public archive node, so no list is needed. Ethereum DYDX migrated through
+the bridge is credited without a transaction of its own: list the bridge acknowledgement's full hash in
+`exports/dydx/transactions.csv` and the credit is rebuilt from it. Unstaked DYDX returns to the wallet when
+its 21-day unbonding ends; it shows up from the first sync after that date.
 
 On top of the classification, a cost-basis engine produces IRS Form 8949, Schedule D and Schedule 1,
 import files for tax software, and a local web app (portfolio, accounts, tax reports).

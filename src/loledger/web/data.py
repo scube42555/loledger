@@ -51,6 +51,27 @@ def account_label(acct: str, labels: dict[str, str]) -> str:
     return f"{lab} ({chain})" if lab else f"{chain} {addr[:6]}…{addr[-4:]}"
 
 
+def account_kind(acct: str) -> str:
+    """What kind of place an engine account is: Wallet, Exchange, or a parked bucket (staked, open order, …)."""
+    if "|" in acct:
+        return "Wallet"
+    for prefix, kind in (("escrow:", "Open order"), ("staked:", "Staked"), ("deposit:", "Stake deposit"),
+                         ("vault:", "Yield vault"), ("xp-chain:", "X/P-Chain"), ("offlist:", "Off-chain")):
+        if acct.startswith(prefix):
+            return kind
+    return "Exchange"
+
+
+def source_summary(kinds: list[str]) -> str:
+    """'3 wallets, 2 exchanges, 1 staked' (most common first)."""
+    plural = {"Wallet": "wallets", "Exchange": "exchanges", "Open order": "open orders"}
+    counts: dict[str, int] = defaultdict(int)
+    for k in kinds:
+        counts[k] += 1
+    return ", ".join(f"{n} {k.lower() if n == 1 else plural.get(k, k.lower())}"
+                     for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
 @dataclass
 class Prices:
     usd: dict[str, Decimal]
@@ -219,6 +240,31 @@ class AppData:
                 v["mv"] += q * p
         return dict(by)
 
+    def account_assets(self) -> dict[str, list[dict[str, Any]]]:
+        """Engine account -> the assets it holds (symbol, qty, cost, price, value), largest value first."""
+        held: dict[str, dict[str, list[Decimal]]] = defaultdict(lambda: defaultdict(lambda: [D0, D0]))
+        for (acct, fam), lots in self.res.holdings.items():
+            if "@" in fam:
+                continue
+            for lot in lots:
+                x = held[acct][fam]
+                x[0] += lot.qty
+                x[1] += lot.cost
+        px = self.prices(sorted({f for v in held.values() for f in v}))
+        out: dict[str, list[dict[str, Any]]] = {}
+        for acct, fams in held.items():
+            rows: list[dict[str, Any]] = []
+            for fam, (q, cost) in fams.items():
+                if q <= 0:
+                    continue
+                p = px.usd.get(fam)
+                mv = None if p is None else q * p
+                rows.append({"fam": fam, "symbol": self.symbol.get(fam, fam.upper()), "qty": q, "cost": cost,
+                             "price": p, "mv": mv, "dust": cost < Decimal("0.01") and (mv is None or mv < Decimal("0.01"))})
+            rows.sort(key=lambda r: (-(r["mv"] or 0), r["symbol"]))
+            out[acct] = rows
+        return out
+
     def wallet_accounts(self, chain: str, address: str, label: str) -> list[str]:
         """Engine accounts behind an addresses.csv row (a Cardano addr1 row is booked under its stake key)."""
         keys = {f"{chain}|{address.lower() if address.startswith('0x') else address}"}
@@ -246,18 +292,20 @@ class AppData:
             q, cost = agg[f]
             p = px.usd.get(f)
             mv = None if p is None else q * p
-            holders = []
+            holders: list[dict[str, Any]] = []
             for acct, (aq, ac) in sorted(per_acct[f].items(), key=lambda kv: -kv[1][0]):
                 if aq <= 0:
                     continue
                 amv = None if p is None else aq * p
-                holders.append({"account": acct, "label": account_label(acct, self._labels), "qty": aq, "cost": ac,
+                holders.append({"account": acct, "label": account_label(acct, self._labels), "kind": account_kind(acct),
+                                "chain": acct.split("|", 1)[0] if "|" in acct else "", "qty": aq, "cost": ac,
                                 "mv": amv, "unrealized": None if amv is None else amv - ac,
                                 "share": float(aq / q * 100) if q else 0.0})
             rows.append({"fam": f, "symbol": self.symbol.get(f, f.upper()), "qty": q, "cost": cost,
                          "cost_per_unit": cost / q if q else D0, "price": p, "mv": mv,
                          "unrealized": None if mv is None else mv - cost, "chg24": px.change24.get(f),
-                         "spark": px.spark.get(f, []), "holders": holders})
+                         "spark": px.spark.get(f, []), "holders": holders,
+                         "sources": source_summary([h["kind"] for h in holders])})
         total_mv = sum((r["mv"] for r in rows if r["mv"] is not None), D0)
         for r in rows:
             r["alloc"] = float(r["mv"] / total_mv * 100) if r["mv"] and total_mv else 0.0

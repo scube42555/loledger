@@ -90,6 +90,7 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
     @app.get("/accounts")
     def accounts(error: str = "", form: dict[str, str] | None = None) -> str:
         values = data.account_values()
+        held = data.account_assets()
         wallets = acc.read_wallets(root, data.settings)
         groups: dict[str, list[dict[str, Any]]] = {}
         seen: set[str] = set()
@@ -101,8 +102,13 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
                  "cost": sum((values[k]["cost"] for k in keys), Decimal(0)),
                  "assets": sum(values[k]["assets"] for k in keys)} if not dup and (keys or (w.supported and not w.gift)) \
                 else None  # synced but empty -> $0; gift recipients and unsupported chains -> "—"
-            groups.setdefault(w.chain, []).append({"w": w, "v": v, "dup": dup, "account": keys[0] if keys else ""})
-        ex: list[dict[str, Any]] = [{"name": e, "v": values.get(e)} for e in exchanges()]
+            assets = [] if dup else sorted((a for k in keys for a in held.get(k, [])),
+                                           key=lambda a: (-(a["mv"] or 0), a["symbol"]))
+            groups.setdefault(w.chain, []).append({"w": w, "v": v, "dup": dup, "account": keys[0] if keys else "",
+                                                   "assets": assets})
+        ex: list[dict[str, Any]] = sorted(({"name": e, "v": values.get(e), "assets": held.get(e, [])}
+                                           for e in exchanges()),
+                                          key=lambda e: (-(e["v"]["mv"] if e["v"] else 0), e["name"]))  # largest first
         chain_mv = {c: sum((r["v"]["mv"] for r in rs if r["v"]), Decimal(0)) for c, rs in groups.items()}
         order = sorted(groups, key=lambda c: (-chain_mv[c], c))
         return render_template("accounts.html", groups=[(c, groups[c], chain_mv[c]) for c in order], exchanges=ex,

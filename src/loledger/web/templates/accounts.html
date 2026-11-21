@@ -1,6 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Accounts{% endblock %}
 {% block body %}
+{% macro detail(id, assets, n) %}
+      <tr class="holders" id="d-{{ id }}" hidden><td colspan="{{ n }}">
+        {% if assets %}
+        <table class="t compact inner">
+          <thead><tr><th>Asset</th><th class="r">Balance</th><th class="r">Price</th><th class="r">Cost basis</th>
+            <th class="r">Value</th><th class="r">Unrealized</th></tr></thead>
+          <tbody>
+          {% for a in assets if not a.dust %}
+            <tr><td><span class="sym">{{ a.symbol[:1] }}</span>{{ a.symbol }}</td><td class="r"><b>{{ a.qty|qty }}</b></td>
+              <td class="r">{{ a.price|price }}</td><td class="r">{{ a.cost|money }}</td><td class="r">{{ a.mv|money }}</td>
+              {% set u = none if a.mv is none else a.mv - a.cost %}
+              <td class="r {{ 'pos' if (u or 0) >= 0 else 'neg' }}">{{ u|money(signed=True) }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% set nd = assets|selectattr('dust')|list|length %}
+        {% if nd %}<p class="muted small" title="{{ assets|selectattr('dust')|map(attribute='symbol')|join(', ') }}">+ {{ nd }} dust balance{{ 's' if nd != 1 }} under $0.01 ({{ assets|selectattr('dust')|map(attribute='symbol')|join(', ') }})</p>{% endif %}
+        {% else %}<p class="muted small">Nothing held here right now.</p>{% endif %}
+      </td></tr>
+{% endmacro %}
+{% macro caret(id) %}<span class="caret" id="c-{{ id }}">▸</span>{% endmacro %}
 <div class="head-row">
   <h1>Accounts</h1>
   <span class="muted">{{ n_wallets }} wallets on {{ groups|length }} chains · {{ exchanges|length }} exchanges · {{ total|money(cents=False) }}</span>
@@ -21,37 +42,6 @@
   <pre class="pre log" id="sync-log"></pre>
 </section>
 
-{% for chain, rows, mv in groups %}
-<section class="card">
-  <div class="chain-head"><span class="sym">{{ chain[:1] }}</span><h2>{{ chain }}</h2>
-    <span class="muted small">{{ rows|length }} {{ 'wallet' if rows|length == 1 else 'wallets' }}</span>
-    <span class="right">{{ mv|money(cents=False) }}</span></div>
-  <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
-    <thead><tr><th>Label</th><th>Address</th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
-    <tbody>
-    {% for r in rows %}{% set w = r.w %}
-      <tr>
-        <td>{{ w.label or '—' }}
-          {% if w.gift %}<span class="chip">Gift recipient</span>{% elif not w.supported %}<span class="chip warn" title="No adapter for this chain: record its events in manual.yaml">Not synced</span>{% endif %}</td>
-        <td><code class="addr" title="{{ w.address }}">{{ w.address[:10] }}…{{ w.address[-6:] }}</code>
-          <button class="copy" type="button" onclick="navigator.clipboard.writeText('{{ w.address }}'); this.textContent='✓'" title="Copy address">⧉</button></td>
-        {% if r.v %}
-          <td class="r">{{ r.v.assets }}</td><td class="r">{{ r.v.cost|money(cents=False) }}</td>
-          <td class="r">{% if r.account %}<a href="{{ url_for('portfolio', account=r.account) }}" title="Holdings in this wallet">{{ r.v.mv|money(cents=False) }}</a>{% else %}{{ r.v.mv|money(cents=False) }}{% endif %}</td>
-        {% elif r.dup %}<td class="r muted small" colspan="3">same wallet as above</td>
-        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}
-        <td class="r">{% if w.supported and not w.gift %}
-          <form method="post" action="{{ url_for('account_sync') }}" class="inline">
-            <input type="hidden" name="chain" value="{{ w.chain }}"><input type="hidden" name="address" value="{{ w.address }}">
-            <button class="btn ghost small" {{ 'disabled' if job and job.running }} title="Fetch new activity for this wallet, then re-classify">↻ Re-sync</button>
-          </form>{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endfor %}
-
 {% if exchanges %}
 <section class="card">
   <div class="chain-head"><span class="sym">⇄</span><h2>Exchanges</h2>
@@ -60,16 +50,50 @@
   <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
     <thead><tr><th>Exchange</th><th></th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
     <tbody>
-    {% for e in exchanges %}
-      <tr><td>{{ e.name }}</td><td></td>
+    {% for e in exchanges %}{% set id = 'x' ~ loop.index %}
+      <tr class="asset" onclick="toggleDetail('{{ id }}')" title="Show what is held on {{ e.name }}"><td>{{ caret(id) }}{{ e.name }}</td><td></td>
         {% if e.v %}<td class="r">{{ e.v.assets }}</td><td class="r">{{ e.v.cost|money(cents=False) }}</td>
-          <td class="r"><a href="{{ url_for('portfolio', account=e.name) }}">{{ e.v.mv|money(cents=False) }}</a></td>
+          <td class="r"><a href="{{ url_for('portfolio', account=e.name) }}" onclick="event.stopPropagation()" title="Open in Portfolio">{{ e.v.mv|money(cents=False) }}</a></td>
         {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}<td></td></tr>
+      {{ detail(id, e.assets, 6) }}
     {% endfor %}
     </tbody>
   </table>
 </section>
 {% endif %}
+
+{% for chain, rows, mv in groups %}
+<section class="card">
+  <div class="chain-head"><span class="sym">{{ chain[:1] }}</span><h2>{{ chain }}</h2>
+    <span class="muted small">{{ rows|length }} {{ 'wallet' if rows|length == 1 else 'wallets' }}</span>
+    <span class="right">{{ mv|money(cents=False) }}</span></div>
+  <table class="t fixed"><colgroup><col style="width:38%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:11%"><col style="width:10%"></colgroup>
+    <thead><tr><th>Label</th><th>Address</th><th class="r">Assets</th><th class="r">Cost basis</th><th class="r">Value</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}{% set w = r.w %}{% set id = 'w' ~ loop.index ~ '-' ~ chain|replace(' ', '') %}
+      <tr class="{{ 'asset' if r.v else '' }}" {% if r.v %}onclick="toggleDetail('{{ id }}')" title="Show what this wallet holds"{% endif %}>
+        <td>{% if r.v %}{{ caret(id) }}{% else %}<span class="caret"></span>{% endif %}{{ w.label or '—' }}
+          {% if w.gift %}<span class="chip">Gift recipient</span>{% elif not w.supported %}<span class="chip warn" title="No adapter for this chain: record its events in manual.yaml">Not synced</span>{% endif %}</td>
+        <td><code class="addr" title="{{ w.address }}">{{ w.address[:10] }}…{{ w.address[-6:] }}</code>
+          <button class="copy" type="button" data-addr="{{ w.address }}" onclick="event.stopPropagation(); copyAddr(this)" title="Copy address">⧉</button></td>
+        {% if r.v %}
+          <td class="r">{{ r.v.assets }}</td><td class="r">{{ r.v.cost|money(cents=False) }}</td>
+          <td class="r">{% if r.account %}<a href="{{ url_for('portfolio', account=r.account) }}" onclick="event.stopPropagation()" title="Open in Portfolio">{{ r.v.mv|money(cents=False) }}</a>{% else %}{{ r.v.mv|money(cents=False) }}{% endif %}</td>
+        {% elif r.dup %}<td class="r muted small" colspan="3">same wallet as above</td>
+        {% else %}<td class="r muted">—</td><td class="r muted">—</td><td class="r muted">—</td>{% endif %}
+        <td class="r">{% if w.supported and not w.gift %}
+          <form method="post" action="{{ url_for('account_sync') }}" class="inline" onclick="event.stopPropagation()">
+            <input type="hidden" name="chain" value="{{ w.chain }}"><input type="hidden" name="address" value="{{ w.address }}">
+            <button class="btn ghost small" {{ 'disabled' if job and job.running }} title="Fetch new activity for this wallet, then re-classify">↻ Re-sync</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% if r.v %}{{ detail(id, r.assets, 6) }}{% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+
 
 <dialog id="add" class="modal" {{ 'open' if error and form }}>
   <div class="modal-head"><h3>Add an account</h3><button class="x" type="button" onclick="this.closest('dialog').close()">×</button></div>
@@ -94,6 +118,17 @@
 {% endblock %}
 {% block scripts %}
 <script>
+function toggleDetail(id) {
+  const row = document.getElementById('d-' + id), open = row.hidden;
+  row.hidden = !open;
+  document.getElementById('c-' + id).textContent = open ? '▾' : '▸';
+}
+function copyAddr(btn) {  // ✓ on success (✗ if the browser refused), back to the copy icon after 2 s
+  clearTimeout(btn._t);
+  navigator.clipboard.writeText(btn.dataset.addr).then(() => { btn.textContent = '✓'; btn.title = 'Copied'; },
+                                                         () => { btn.textContent = '✗'; btn.title = 'Copy failed'; })
+    .finally(() => { btn._t = setTimeout(() => { btn.textContent = '⧉'; btn.title = 'Copy address'; }, 2000); });
+}
 (() => {
   const box = document.getElementById('sync'), log = document.getElementById('sync-log');
   let wasRunning = {{ 'true' if job and job.running else 'false' }};

@@ -1,0 +1,11 @@
+# Cosmos Hub registry: tx "to" is the first message type (Cosmos SDK msgs) or a synthetic pseudo-address.
+contracts:
+  /cosmos.staking.v1beta1.MsgDelegate: {name: Delegate, kind: staking, protocol: cosmos-staking}
+  /cosmos.staking.v1beta1.MsgUndelegate: {name: Undelegate, kind: staking, protocol: cosmos-staking}
+  /cosmos.staking.v1beta1.MsgBeginRedelegate: {name: Redelegate, kind: staking, protocol: cosmos-staking}
+  /cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward: {name: Withdraw rewards, kind: staking, protocol: cosmos-staking}
+  cosmos:unbonding: {name: Unbonding completion, kind: staking, protocol: cosmos-staking}
+  /ibc.applications.transfer.v1.MsgTransfer: {name: IBC transfer, kind: bridge, protocol: ibc}
+  # IBC receipts are relayed by a third party: the first message is the relayer's light-client update
+  /ibc.core.client.v1.MsgUpdateClient: {name: IBC relayer (packet delivery), kind: bridge, protocol: ibc}
+  /ibc.core.channel.v1.MsgRecvPacket: {name: IBC packet delivery, kind: bridge, protocol: ibc}

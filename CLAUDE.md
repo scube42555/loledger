@@ -40,6 +40,18 @@ fetch ──► normalize ──► rules ──► decode ──► prices ─�
      to it. Partial-fill txs that never pay the wallet are found by walking back from the final fill.
    - **Other chains:** Solana (stake accounts expanded per wallet), Sui, Algorand, Injective, Hedera, Chia,
      and UTXO chains (Bitcoin, Doge, Kaspa).
+   - **Cosmos SDK chains** (`adapters/cosmos/`, per-chain `PROFILES` in `fetch.py`): Cosmos Hub and dYdX.
+     dYdX's archive (Polkachu) allows tx search by address. Its Ethereum-bridge credits have no tx: they are rebuilt
+     from the proposer's MsgAcknowledgeBridges (listed by full hash in `exports/dydx/transactions.csv`) at
+     ack height + `delay_blocks`, as `bridge:<event id>`. Unbonding completions are booked only once their
+     completion time has passed.
+     Cosmos Hub: public nodes prune history and the CryptoCrew archive node has address
+     search disabled. So the wallet's txs come from `exports/cosmos/transactions.csv` (height + the explorer's
+     shortened hash). Each is resolved by hashing the block's txs (RPC `/block`), then fetched with REST GetTx.
+     Both SDK result layouts are converted (per-message `logs` ≤ 0.47; flat events with `msg_index` ≥ 0.50) and
+     fed to the Cosmos SDK normalizer shared with Injective (`adapters/injective/normalize.py`, parameterized
+     by native denom). IBC receipts are relayed by third parties: the counterparty becomes `ibc:<sender>`, and
+     the relayer's memo is kept out of the spam rule's `note`.
    - **Exchanges** (`adapters/exchange/`): Crypto.com through its API (keys in `.env`). MEXC, Gemini, OKX,
      Binance.US and Coinbase through export files under `exports/` (paths and parsers in `settings.yaml`).
      These aren't listed in addresses.csv.
@@ -115,7 +127,7 @@ After classification:
   differences and nothing more.
 - **Gas** goes in the `gas_fee_native`/`gas_fee_usd` columns, not in separate fee rows. Always fetch full
   history.
-- **Unsupported chains** (e.g. Cosmos) still belong in addresses.csv. They're skipped with a warning and their
+- **Unsupported chains** (e.g. Osmosis) still belong in addresses.csv. They're skipped with a warning and their
   events go in `manual.yaml` until an adapter exists.
 
 ## Extending

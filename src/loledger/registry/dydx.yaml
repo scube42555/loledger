@@ -1,0 +1,16 @@
+# dYdX registry: tx "to" is the first message type (Cosmos SDK msgs) or a synthetic pseudo-address.
+contracts:
+  /cosmos.staking.v1beta1.MsgDelegate: {name: Delegate, kind: staking, protocol: dydx-staking}
+  /cosmos.staking.v1beta1.MsgUndelegate: {name: Undelegate, kind: staking, protocol: dydx-staking}
+  /cosmos.staking.v1beta1.MsgBeginRedelegate: {name: Redelegate, kind: staking, protocol: dydx-staking}
+  /cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward: {name: Withdraw rewards, kind: staking, protocol: dydx-staking}
+  dydx:unbonding: {name: Unbonding completion, kind: staking, protocol: dydx-staking}
+  /ibc.applications.transfer.v1.MsgTransfer: {name: IBC transfer, kind: bridge, protocol: ibc}
+  # IBC receipts are relayed by a third party: the first message is the relayer's light-client update
+  /ibc.core.client.v1.MsgUpdateClient: {name: IBC relayer (packet delivery), kind: bridge, protocol: ibc}
+  /ibc.core.channel.v1.MsgRecvPacket: {name: IBC packet delivery, kind: bridge, protocol: ibc}
+  # Ethereum DYDX migrated through the dYdX bridge: credited by the chain after a delay (no tx; see adapter)
+  dydx:bridge: {name: dYdX bridge (Ethereum DYDX migration), kind: bridge, protocol: dydx-bridge}
+
+price_aliases:
+  "ibc/8E27BA2D5493AF5636760E354E46004562C46AB7EC0CC4C1CA14E9E20E2545B5": "coingecko:usd-coin"   # Noble USDC (uusdc)
