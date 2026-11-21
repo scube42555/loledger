@@ -107,7 +107,11 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
             groups.setdefault(w.chain, []).append({"w": w, "v": v, "dup": dup, "account": keys[0] if keys else "",
                                                    "assets": assets})
         def ex_source(name: str) -> str:
+            from ..adapters.exchange import okx
+
             c = data.settings.chains.get(name)
+            if c is not None and c.parser == "okx" and okx.has_keys():
+                return f"API (keys in .env) + export files in {c.export}"
             if c is not None and c.export:
                 return f"export files in {c.export}"
             return "API (keys in .env)" if c is not None else ""

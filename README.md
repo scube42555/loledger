@@ -9,7 +9,9 @@ withdrawals, prices everything in USD at the time it happened, and writes a summ
 Supported:
 - **EVM:** Avalanche C-Chain, Ethereum, Base, Polygon, Arbitrum.
 - **Other chains:** Cardano, Solana, Sui, Algorand, Injective, Cosmos Hub, dYdX, Hedera, Chia, Bitcoin, Doge, Kaspa.
-- **Exchanges:** Crypto.com (API), and MEXC, Gemini, OKX, Binance.US and Coinbase (export files in `exports/`).
+- **Exchanges:** Crypto.com and OKX through their APIs (read-only keys in `.env`), and MEXC, Gemini, OKX,
+  Binance.US and Coinbase through export files in `exports/`. You can drop newer exports next to older ones:
+  overlapping date ranges are merged and each transaction is counted once.
 
 Wallets on other chains (Osmosis, for example) can still be listed. They are skipped with a warning, and
 their events can be entered in `manual.yaml`.
@@ -40,6 +42,8 @@ cp .env.example .env        # only needed for chains whose explorer requires a k
 | Variable | Needed for |
 |---|---|
 | `ETHERSCAN_API_KEY` | Ethereum / Arbitrum (Etherscan V2). The free tier does **not** cover Avalanche or Base. |
+| `CRYPTOCOM_API_KEY`, `CRYPTOCOM_API_SECRET` | Crypto.com Exchange account (read-only key). |
+| `OKX_API_KEY`, `OKX_API_SECRET`, `OKX_API_PASSPHRASE` | OKX account (read-only key). US accounts use us.okx.com, the default; set `OKX_API_BASE` for another OKX site. |
 | `ROUTESCAN_API_KEY` | Optional; raises Routescan limits (Avalanche works without it). |
 | `KOIOS_API_KEY` | Optional; raises Koios limits (the public tier works without it). |
 

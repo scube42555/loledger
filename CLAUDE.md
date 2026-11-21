@@ -55,6 +55,14 @@ fetch ──► normalize ──► rules ──► decode ──► prices ─�
    - **Exchanges** (`adapters/exchange/`): Crypto.com through its API (keys in `.env`). MEXC, Gemini, OKX,
      Binance.US and Coinbase through export files under `exports/` (paths and parsers in `settings.yaml`).
      These aren't listed in addresses.csv.
+     - **OKX** also reads its API (`okx.py`, us.okx.com by default; a key only works on the OKX site it was made
+       on). The API keeps about 3 months, so fetched bills accumulate in the store by bill id. They are shaped
+       like export rows and merged in `files.parse_okx` (bill ids match the exports; API rows win, carrying the
+       on-chain tx hash and withdrawal fee).
+     - **Overlapping export files must never double count.** Merge by the exchange's row id where one exists
+       (OKX bill id, Binance.US Transaction_Id). Otherwise use `files.merge_rows`: identical rows within one file
+       are separate records, and across files a record counts as often as the file with the most copies has it.
+       Keep this rule for every new export parser.
 2. **Normalize** (`adapters/<chain>/normalize.py`): one signed leg per asset and counterparty, from the
    wallet's point of view (`model.py`: `Movement`, `TxContext`).
    - **EVM:** wrap and unwrap legs come from WETH9 events.

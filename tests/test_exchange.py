@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -263,3 +264,52 @@ def test_okx_overlapping_exports_are_counted_once(tmp_path: Path) -> None:
     usdt = sum((m.amount for m in ledger.moves if m.symbol == "USDT"), Decimal(0))
     assert (btc, usdt) == (Decimal("0.03"), Decimal("100"))
     assert any("2 row(s) appear in more than one export" in c for c in ledger.checks)
+
+
+def test_merge_rows_keeps_equal_fills_within_a_file_and_drops_repeats_across_files() -> None:
+    from loledger.adapters.exchange.files import merge_rows
+
+    fill = {"Time": "2024-01-01 10:00:00", "Pair": "BTC_USDT", "Qty": "0.1"}
+    later = {"Time": "2024-02-01 10:00:00", "Pair": "BTC_USDT", "Qty": "0.2"}
+    old = [fill, dict(fill)]  # two identical fills in one export: two records
+    new = [dict(fill), dict(fill), dict(later)]  # an overlapping newer export repeats both, adds one
+    rows, dupes = merge_rows([old, new])
+    assert sorted(r["Qty"] for r in rows) == ["0.1", "0.1", "0.2"] and dupes == 2
+
+
+def test_gemini_folder_of_overlapping_exports_counts_each_record_once(tmp_path: Path) -> None:
+    from loledger.adapters.exchange.files import parse_gemini
+
+    head = "Date,Time (UTC),Type,Symbol,Specification,Trade ID,Order ID,Tx Hash,BTC Amount BTC,Fee (BTC) BTC,BTC Balance BTC"
+    r1 = "2024-01-01,10:00:00.000,Credit,BTC,Deposit,,,abc,0.5,,0.5"
+    r2 = "2024-02-01,10:00:00.000,Debit,BTC,Withdrawal,,,def,-0.1,,0.4"
+    (tmp_path / "old.csv").write_text(f"{head}\n{r1}\n,,,,,,,,,,0.5\n")
+    # the newer export has an extra asset's balance column: the same records still match
+    (tmp_path / "new.csv").write_text(f"{head},ETH Balance ETH\n{r1},0\n{r2},0\n,,,,,,,,,,0.4,0\n")
+    led = parse_gemini(tmp_path)
+    assert sum((m.amount for m in led.moves if m.symbol == "BTC"), Decimal(0)) == Decimal("0.4")
+    assert any("1 row(s) repeated across 2 export files" in c for c in led.checks)
+    assert any("totals row: all match" in c for c in led.checks)
+
+
+def test_okx_api_rows_take_tx_hash_and_fee_and_skip_internal_transfers(tmp_path: Path) -> None:
+    from loledger.adapters.exchange.files import parse_okx
+    from loledger.adapters.exchange.okx import sign, to_export_rows
+
+    assert sign("secret", "2026-01-01T00:00:00.000Z", "GET", "/api/v5/account/balance") == \
+        base64.b64encode(hmac.new(b"secret", b"2026-01-01T00:00:00.000ZGET/api/v5/account/balance", hashlib.sha256).digest()).decode()
+    api = {"trading": [{"billId": "11", "ordId": "o1", "ts": "1794685975000", "fillTime": "1794685975000", "type": "2",
+                        "instId": "BTC-USDT", "ccy": "BTC", "balChg": "0.0403192", "fee": "-0.0000808", "bal": "0.04"},
+                       {"billId": "12", "ts": "1794685975000", "type": "1", "ccy": "BTC", "balChg": "-0.1"}],
+           "funding": [{"billId": "300024789907", "ts": "1794846840000", "type": "2", "ccy": "ADA", "balChg": "-5.2"},
+                       {"billId": "300024789906", "ts": "1794846825000", "type": "130", "ccy": "ADA", "balChg": "5.2"}],
+           "deposits": [],
+           "withdrawals": [{"wdId": "w1", "ts": "1794846825000", "ccy": "ADA", "amt": "4", "fee": "1.2", "txId": "1f76",
+                            "to": "addr1x", "chain": "ADA-Cardano"}]}
+    trading, funding, notes = to_export_rows(api)
+    assert [r["id"] for r in trading] == ["11"] and [r["id"] for r in funding] == ["300024789907"] and notes == []
+    led = parse_okx(tmp_path / "no-exports", api=(trading, funding))
+    wd = [m for m in led.moves if m.tx_hash == "okx:onchain_withdrawal:300024789907"]
+    assert sorted((m.source, m.amount) for m in wd) == [("fee", Decimal("-1.2")), ("onchain_withdrawal", Decimal("-4"))]
+    assert led.txs["okx:onchain_withdrawal:300024789907"].meta["txid"] == "1f76"
+    assert sum((m.amount for m in led.moves if m.symbol == "BTC"), Decimal(0)) == Decimal("0.0403192")

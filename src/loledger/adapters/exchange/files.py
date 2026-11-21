@@ -75,6 +75,26 @@ class _Builder:
         return Ledger(self.moves, self.txs, checks)
 
 
+def merge_rows(per_file: list[list[dict[str, str]]], key: Any = None) -> tuple[list[dict[str, str]], int]:
+    """Rows of several export files with overlapping date ranges, each record once. Identical rows inside one file
+    are separate records (two equal fills); across files a record counts as many times as the file with the most
+    copies has it. key(row) -> hashable; default: every non-empty column. Returns (rows, duplicates dropped)."""
+    def full(r: dict[str, str]) -> tuple[tuple[str, str], ...]:
+        return tuple(sorted((k, (v or "").strip()) for k, v in r.items() if k and (v or "").strip()))
+
+    kf = key or full
+    best: dict[Any, tuple[int, dict[str, str]]] = {}
+    for rows in per_file:
+        here: dict[Any, int] = defaultdict(int)
+        for r in rows:
+            k = kf(r)
+            here[k] += 1
+            if here[k] > best.get(k, (0, r))[0]:
+                best[k] = (here[k], r)
+    out = [r for n, r in best.values() for _ in range(n)]
+    return out, sum(len(rows) for rows in per_file) - len(out)
+
+
 def _hex_lower(t: str) -> str:
     """Lowercase hex hashes only; base58 signatures (Solana) are case-sensitive."""
     body = t[2:] if t.lower().startswith("0x") else t
@@ -100,9 +120,10 @@ def parse_mexc(folder: Path, tz_hours: float = 0, chain: str = "MEXC", web_tz_ho
     checks: list[str] = []
 
     def rows(pattern: str) -> list[dict[str, str]]:
-        out: list[dict[str, str]] = []
-        for f in sorted(folder.glob(f"*{pattern}.csv")):
-            out.extend(csv.DictReader(f.open(encoding="utf-8-sig")))
+        files = [list(csv.DictReader(f.open(encoding="utf-8-sig"))) for f in sorted(folder.glob(f"*{pattern}.csv"))]
+        out, dupes = merge_rows(files)
+        if dupes:
+            checks.append(f"MEXC {pattern}: {dupes} row(s) repeated across export files (overlapping ranges); counted once")
         return out
 
     fmt = "%Y-%m-%d %H:%M:%S"
@@ -314,12 +335,29 @@ def _display_tol(cell: str) -> Decimal:
     return Decimal(2) * Decimal(10) ** -max(places, 2 if cell.strip().startswith(("$", "($")) else places)
 
 
+def _gemini_key(r: dict[str, str]) -> tuple[Any, ...]:
+    """A Gemini record, whatever the export: balance columns are left out (a newer export adds one per newly
+    traded asset), as are empty amount/fee columns."""
+    fixed = tuple((r.get(c) or "").strip() for c in ("Date", "Time (UTC)", "Type", "Symbol", "Specification",
+                                                     "Trade ID", "Order ID", "Tx Hash"))
+    amounts = tuple(sorted((k, v.strip()) for k, v in r.items()
+                           if k and (" Amount " in k or k.startswith("Fee (")) and (v or "").strip()))
+    return fixed + amounts
+
+
 def parse_gemini(path: Path, chain: str = "Gemini") -> Ledger:
-    """Gemini 'transaction history' CSV. Self-check: running sums must equal the per-row balance columns."""
+    """Gemini 'transaction history' CSV(s): a file, or a folder of them (overlapping exports are merged, each
+    record once). Self-check: running sums must equal the per-row balance columns."""
     b = _Builder(chain)
     w = "gemini:exchange"
-    rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
-    cols = list(rows[0].keys()) if rows else []
+    files = [path] if path.is_file() else sorted(f for f in path.glob("*.csv")
+                                                 if "Time (UTC)" in f.open(encoding="utf-8-sig").readline())
+    per_file = [list(csv.DictReader(f.open(encoding="utf-8-sig"))) for f in files]
+    body, dupes = merge_rows([[r for r in rows if r["Type"].strip()] for rows in per_file], _gemini_key)
+    # the totals row of the export that runs latest (the last row with no Type)
+    tots = [(rows[-2]["Date"] if len(rows) > 1 else "", rows[-1]) for rows in per_file if rows and not rows[-1]["Type"].strip()]
+    rows = sorted(body, key=lambda r: (r["Date"], r["Time (UTC)"])) + ([max(tots, key=lambda t: t[0])[1]] if tots else [])
+    cols = sorted({c for rs in per_file for r in rs[:1] for c in r})
     assets = sorted({c.split(" Amount ")[0] for c in cols if " Amount " in c})
     running: dict[str, Decimal] = defaultdict(Decimal)
     bad_rows = 0
@@ -371,7 +409,7 @@ def parse_gemini(path: Path, chain: str = "Gemini") -> Ledger:
             if cell and abs(_gemini_num(cell) - running[a]) > Decimal("0.000001") * max(Decimal(1), abs(running[a])):
                 diffs.append(f"{a}: ours {running[a].normalize():f} vs totals row {cell}")
     final = {a: v for a, v in running.items() if abs(v) > Decimal("1e-9")}
-    return b.ledger([
+    return b.ledger(([f"Gemini: {dupes} row(s) repeated across {len(files)} export files; counted once"] if dupes else []) + [
         f"Gemini: {len(rows)} rows; per-row running balances differ beyond display rounding on {bad_rows} row/asset(s) "
         f"(cents of USD from Gemini's rounding)",
         "Gemini final balances vs the export's totals row: " + ("all match" if totals and not diffs else
@@ -405,7 +443,10 @@ def _okx_csvs(folder: Path) -> list[tuple[str, list[dict[str, str]]]]:
     return out
 
 
-def parse_okx(folder: Path, chain: str = "OKX") -> Ledger:
+def parse_okx(folder: Path, chain: str = "OKX", api: tuple[list[dict[str, str]], list[dict[str, str]]] | None = None,
+              ) -> Ledger:
+    """OKX export files, plus rows from the API (adapters/exchange/okx.py) in the same layout when given. Rows are
+    merged by OKX bill id; API rows win (they carry the withdrawal fee and the on-chain tx hash)."""
     b = _Builder(chain)
     w = "okx:account"
     fmt = "%Y-%m-%d %H:%M:%S"
@@ -414,7 +455,7 @@ def parse_okx(folder: Path, chain: str = "OKX") -> Ledger:
     trading: dict[str, dict[str, str]] = {}
     funding: dict[str, dict[str, str]] = {}
     dupes = 0
-    for name, rows in _okx_csvs(folder):
+    for name, rows in _okx_csvs(folder) if folder.exists() else []:
         kind = trading if rows and "Order id" in rows[0] else funding if rows and "Before Balance" in rows[0] else None
         if kind is None:
             continue
@@ -424,6 +465,12 @@ def parse_okx(folder: Path, chain: str = "OKX") -> Ledger:
             kind[r["id"]] = r
     if dupes:
         checks.append(f"OKX: {dupes} row(s) appear in more than one export (overlapping date ranges); counted once")
+    if api is not None:
+        n_exp = len(trading) + len(funding)
+        both = sum(1 for r in api[0] if r["id"] in trading) + sum(1 for r in api[1] if r["id"] in funding)
+        trading.update({r["id"]: r for r in api[0]})
+        funding.update({r["id"]: r for r in api[1]})
+        checks.append(f"OKX: {n_exp} export row(s), {len(api[0]) + len(api[1])} API row(s), {both} in both")
     for rows in (list(trading.values()), list(funding.values())):
         if rows and "Order id" in rows[0]:  # trading bill history: one row per currency per fill
             last_bal: dict[str, Decimal] = {}
@@ -446,8 +493,16 @@ def parse_okx(folder: Path, chain: str = "OKX") -> Ledger:
                     continue
                 jt = "ONCHAIN_DEPOSIT" if typ == "Deposit" else "ONCHAIN_WITHDRAWAL"
                 h = f"okx:{jt.lower()}:{r['id']}"
-                b.leg(w, h, _ts(r["Time"], fmt), r["Symbol"], Decimal(r["Amount"]), jt.lower(), "okx",
-                      {"journal_type": jt, "txid": "", "gross": True})
+                txh, idx = _split_txid(r.get("_txid", ""))
+                meta = {"journal_type": jt, "txid": txh, "txid_index": idx,
+                                        "address": r.get("_address") or None, "network": r.get("_network") or None}
+                if r.get("_net"):  # API withdrawal: what left on chain + OKX's fee
+                    meta.update(fee=r["_fee"], net_amount=r["_net"])
+                    b.leg(w, h, _ts(r["Time"], fmt), r["Symbol"], -Decimal(r["_net"]), jt.lower(), "okx", meta)
+                    b.leg(w, h, _ts(r["Time"], fmt), r["Symbol"], -Decimal(r["_fee"]), "fee", "okx", meta)
+                else:  # export row: the gross amount (fee included), no tx hash
+                    meta["gross"] = True
+                    b.leg(w, h, _ts(r["Time"], fmt), r["Symbol"], Decimal(r["Amount"]), jt.lower(), "okx", meta)
     return b.ledger(checks)
 
 

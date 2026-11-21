@@ -209,12 +209,12 @@ chains:
     tz_hours: 8                  # export times are UTC+8: 23 tx-hash-linked transfers sit 7.94–8.02 h after chain time
                                  # website history downloads are UTC-4 (TxID-linked rows sit exactly 4 h before chain time)
   Gemini:
-    kind: exchange               # file export (exports/gemini/transaction_history.csv), times in UTC
+    kind: exchange               # file export(s) in exports/gemini (transaction history CSVs), times in UTC
     aliases: []
     chain_id: null
     native_symbol: USD
     native_decimals: 2
-    export: exports/gemini/transaction_history.csv
+    export: exports/gemini            # transaction history CSV(s); overlapping exports merged
     parser: gemini
     credit_subtype: staking_reward   # bare "Deposit" credits without tx hash: user-confirmed staking rewards
   OKX:

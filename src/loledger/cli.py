@@ -148,6 +148,20 @@ def _fetch_exchanges(settings: Settings, store: Store) -> None:
           f"{len(bundle.withdrawals)} withdrawals -> {len(moves)} movements ({dict(kinds)})")
 
 
+def _okx_api_rows(store: Store) -> tuple[list[dict[str, str]], list[dict[str, str]], list[str]] | None:
+    """OKX API rows in the export layout (trading, funding, notes), or None without keys / on failure (the export
+    files are then used alone)."""
+    from .adapters.exchange import okx
+
+    if not okx.has_keys():
+        return None
+    try:
+        return okx.to_export_rows(okx.OkxClient(store).fetch())
+    except Exception as e:  # keep going with the export files
+        log.error("OKX API failed, using the export files only (%s: %s)", type(e).__name__, str(e)[:200])
+        return None
+
+
 def _load_file_exchanges(settings: Settings, store: Store) -> list[str]:
     """Parse file-based exchange exports into the store. Returns self-check lines for the summary."""
     from .adapters.exchange import files
@@ -157,18 +171,21 @@ def _load_file_exchanges(settings: Settings, store: Store) -> list[str]:
         if chain.kind != "exchange" or not chain.parser:
             continue
         path = Path(chain.export)
-        if not path.exists():
+        okx_api = _okx_api_rows(store) if chain.parser == "okx" else None
+        if not path.exists() and okx_api is None:
             log.info("%s skipped: %s not found", chain.name, path)
             continue
         parsers = {"mexc": lambda: files.parse_mexc(path, chain.tz_hours, chain.name),
                    "gemini": lambda: files.parse_gemini(path, chain.name),
-                   "okx": lambda: files.parse_okx(path, chain.name),
+                   "okx": lambda: files.parse_okx(path, chain.name, okx_api[:2] if okx_api else None),
                    "binanceus": lambda: files.parse_binanceus(path, chain.name),
                    "coinbase_manual": lambda: files.parse_coinbase_manual(path, chain.name)}
         if chain.parser not in parsers:
             log.warning("%s: unknown parser %r", chain.name, chain.parser)
             continue
         ledger = parsers[chain.parser]()
+        if okx_api:
+            ledger.checks.extend(okx_api[2])
         by_wallet: dict[str, list[Movement]] = defaultdict(list)
         for m in ledger.moves:
             by_wallet[m.wallet].append(m)
@@ -176,7 +193,8 @@ def _load_file_exchanges(settings: Settings, store: Store) -> list[str]:
             store.replace_wallet_movements(chain.name, wid, ms)
             EXCHANGE_WALLETS.setdefault(chain.name, set()).add(wid)
         store.upsert_txs(ledger.txs.values())
-        print(f"\n== {chain.name} (export {path}): {len(ledger.moves)} movements in {len(ledger.txs)} entries")
+        src = f"export {path}" + (" + API" if okx_api else "")
+        print(f"\n== {chain.name} ({src}): {len(ledger.moves)} movements in {len(ledger.txs)} entries")
         for c in ledger.checks:
             print(f"  {c}")
         checks.extend(ledger.checks)
@@ -959,11 +977,13 @@ def _verify_exchanges(settings: Settings, store: Store) -> int:
     from .adapters.exchange import cryptocom
 
     bad = 0
+    client: Any = None
     if "Crypto.com" in settings.chains:
         try:
             client = cryptocom.CryptoComClient(store)
         except ConfigError:
-            return 0
+            client = None
+    if "Crypto.com" in settings.chains and client is not None:
         moves = store.load_movements("Crypto.com", EXCHANGE_WALLET["Crypto.com"])
         computed: dict[str, Decimal] = defaultdict(Decimal)
         for m in moves:
@@ -972,6 +992,21 @@ def _verify_exchanges(settings: Settings, store: Store) -> int:
                 for p in client.call("private/user-balance", {})["data"][0]["position_balances"]}
         _record("Crypto.com", EXCHANGE_WALLET["Crypto.com"], live)
         print(f"\nCrypto.com Exchange ({len(moves)} movements)")
+        for k in sorted(set(computed) | set(live)):
+            c, o = computed.get(k, Decimal(0)), live.get(k, Decimal(0))
+            ok = abs(c - o) < Decimal("1e-8")
+            bad += 0 if ok else 1
+            print(f"  {k:10} {'':13} {c:>24.8f} {o:>24.8f}{'' if ok else '  <-- MISMATCH'}")
+    from .adapters.exchange import okx
+
+    if "OKX" in settings.chains and okx.has_keys():
+        moves = store.load_movements("OKX", "okx:account")
+        computed = defaultdict(Decimal)
+        for m in moves:
+            computed[m.asset_id] += m.amount
+        live = okx.OkxClient(store).balances()
+        _record("OKX", "okx:account", live)
+        print(f"\nOKX ({len(moves)} movements)")
         for k in sorted(set(computed) | set(live)):
             c, o = computed.get(k, Decimal(0)), live.get(k, Decimal(0))
             ok = abs(c - o) < Decimal("1e-8")
