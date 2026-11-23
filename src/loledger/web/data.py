@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any
 
 from ..config import load_settings
-from ..costbasis import Engine, Result, load as load_legs
+from ..costbasis import FIAT, Engine, Leg, Result, load as load_legs
 from ..http import HttpClient
 from ..reconcile import family
 from ..taxforms import EXPORTS, Profile, TaxYear, build_year, carryover_out, year_notes
@@ -72,6 +73,16 @@ def source_summary(kinds: list[str]) -> str:
                      for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
+def fiat_balances(legs: Iterable[Leg], closed: dict[str, Any] | None = None) -> dict[str, Decimal]:
+    """Exchange account -> USD cash held: the sum of its USD legs (fiat carries no lots in the cost basis engine).
+    Closed accounts and balances under half a cent are left out."""
+    bal: dict[str, Decimal] = defaultdict(Decimal)
+    for lg in legs:
+        if lg.fam in FIAT:
+            bal[lg.acct] += lg.amount
+    return {a: q for a, q in bal.items() if q >= Decimal("0.005") and a not in (closed or {})}
+
+
 @dataclass
 class Prices:
     usd: dict[str, Decimal]
@@ -95,8 +106,9 @@ class AppData:
         with self.lock:
             classified = self.root / "classified.csv"
             self.profile = Profile.load(self.root / "tax_profile.yaml")
-            self.res: Result = Engine(pre=self.pre, post=self.post, closures=self.profile.closed_accounts).run(
-                load_legs(classified, self.root / "manual.yaml"))
+            legs = load_legs(classified, self.root / "manual.yaml")
+            self.res: Result = Engine(pre=self.pre, post=self.post, closures=self.profile.closed_accounts).run(legs)
+            self.cash = fiat_balances(legs, self.profile.closed_accounts)
             if self.proceeds_choice:
                 self.profile.proceeds = self.proceeds_choice
             self.loaded = datetime.now(UTC)
@@ -220,7 +232,7 @@ class AppData:
 
     # -- portfolio --------------------------------------------------------------------------------
     def accounts(self) -> list[tuple[str, str]]:
-        accts = sorted({a for (a, f), lots in self.res.holdings.items() if lots and "@" not in f})
+        accts = sorted({a for (a, f), lots in self.res.holdings.items() if lots and "@" not in f} | set(self.cash))
         return [(a, account_label(a, self._labels)) for a in accts]
 
     def account_values(self) -> dict[str, dict[str, Any]]:
@@ -294,6 +306,16 @@ class AppData:
         fams = [f for f, (q, _) in agg.items() if q > 0]
         px = self.prices(fams)
         rows: list[dict[str, Any]] = []
+        cash = {a: q for a, q in self.cash.items() if not account or a == account}
+        if cash:  # USD cash on exchanges: $1, cost basis = face value
+            total = sum(cash.values(), D0)
+            rows.append({"fam": "usd", "symbol": "USD", "qty": total, "cost": total, "cost_per_unit": Decimal(1),
+                         "price": Decimal(1), "mv": total, "unrealized": D0, "chg24": None, "spark": [], "cash": True,
+                         "holders": [{"account": a, "label": account_label(a, self._labels), "kind": account_kind(a),
+                                      "chain": "", "qty": q, "cost": q, "mv": q, "unrealized": D0,
+                                      "share": float(q / total * 100)}
+                                     for a, q in sorted(cash.items(), key=lambda kv: -kv[1])],
+                         "sources": source_summary([account_kind(a) for a in cash])})
         for f in fams:
             q, cost = agg[f]
             p = px.usd.get(f)

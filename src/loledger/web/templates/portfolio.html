@@ -10,7 +10,8 @@
       <div><div class="kpi {{ 'pos' if a.mv >= a.cost else 'neg' }}">{{ (a.mv - a.cost)|money(signed=True, cents=False) }}</div><div class="muted small">Unrealized</div></div>
     </div>
     <div class="chart"><canvas id="hist"></canvas></div>
-    <div class="muted small">Month-end values. Past market value uses the last price seen in your own transactions; today's uses live prices.</div>
+    <div class="muted small">Month-end values. Past market value uses the last price seen in your own transactions; today's uses live prices.
+      USD cash on exchanges is in today's totals but not in the chart.</div>
   </section>
   <section class="card">
     <h3>Tax activity</h3>
