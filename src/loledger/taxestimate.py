@@ -20,6 +20,9 @@ South Carolina (`state: SC` in tax_profile.yaml), the same difference for the st
   standard deduction.
 - 2025: SC taxable income = federal taxable income - 44% of the net long-term gain; 0% / 3% / 6%.
 
+Qualified dividends entered on the tax page (non-crypto) are on the return with and without the crypto: taxed
+at 0/15/20% stacked below the crypto's long-term gain, counted in the NIIT, and ordinary income for SC.
+
 Not included: credits, AMT, phase-outs other than the SCIAD, other capital gains or losses, and the cents
 rounding the forms themselves use.
 """
@@ -28,9 +31,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_FLOOR, Decimal
+from decimal import ROUND_FLOOR, Decimal, InvalidOperation
+from pathlib import Path
+
+import yaml
 
 from .taxforms import TaxYear, carryover_out
+
+INPUTS = Path("data/tax_estimate.yaml")  # year -> {qualified_dividends: ...}, entered on the tax page
 
 D0 = Decimal(0)
 STATUSES = {"married_joint": "Married filing jointly", "married_separate": "Married filing separately",
@@ -113,14 +121,17 @@ def crypto_part(ty: TaxYear, status: str) -> Crypto:
     return Crypto(ty.income_total - ded, D0, ded, D0, carryover_out(st, lt, limit))
 
 
-def extra_tax(c: Crypto, other: Decimal, b: Brackets) -> Decimal:
-    """Federal tax the crypto adds when other taxable income is `other` (-std deduction = no other income)."""
-    base = income_tax(other, D0, b)
-    taxable = max(D0, other + c.ordinary + c.pref)
-    tax = income_tax(taxable, c.pref, b) - base
-    if c.gain > 0:  # NIIT; MAGI ~ taxable income + standard deduction
-        tax += Decimal("0.038") * max(D0, min(c.gain, taxable + b.std - b.niit))
-    return tax
+def _federal(taxable: Decimal, pref: Decimal, nii: Decimal, b: Brackets) -> Decimal:
+    """Income tax plus NIIT (MAGI ~ taxable income + standard deduction)."""
+    taxable = max(taxable, D0)
+    return income_tax(taxable, pref, b) + Decimal("0.038") * max(D0, min(nii, taxable + b.std - b.niit))
+
+
+def extra_tax(c: Crypto, other: Decimal, b: Brackets, qdiv: Decimal = D0) -> Decimal:
+    """Federal tax the crypto adds when other ordinary taxable income is `other` (-std deduction = no other
+    income) and there are `qdiv` qualified dividends besides."""
+    base = _federal(other + qdiv, qdiv, qdiv, b)
+    return _federal(other + qdiv + c.ordinary + c.pref, qdiv + c.pref, qdiv + max(c.gain, D0), b) - base
 
 
 # ------------------------------------------------------------------------------------- South Carolina
@@ -171,10 +182,11 @@ def _sc_tax(fed_taxable: Decimal, ltcg: Decimal, status: str, b: Brackets, r: St
     return _bracket_tax(max(taxable, D0), r.brackets)
 
 
-def extra_state_tax(c: Crypto, other: Decimal, status: str, b: Brackets, r: StateRules) -> Decimal:
-    """SC tax the crypto adds; `other` as for extra_tax (federal taxable income from everything else)."""
-    base = _sc_tax(other, D0, status, b, r)
-    return _sc_tax(other + c.ordinary + c.pref, c.pref, status, b, r) - base
+def extra_state_tax(c: Crypto, other: Decimal, status: str, b: Brackets, r: StateRules,
+                    qdiv: Decimal = D0) -> Decimal:
+    """SC tax the crypto adds; `other` and `qdiv` as for extra_tax."""
+    base = _sc_tax(other + qdiv, D0, status, b, r)
+    return _sc_tax(other + qdiv + c.ordinary + c.pref, c.pref, status, b, r) - base
 
 
 # ------------------------------------------------------------------------------------------- the table
@@ -203,6 +215,7 @@ class Estimate:
     ytd: bool  # the year isn't over yet
     state: str = ""  # "SC" when estimated
     state_year: int = 0  # the SC rules year used
+    qdiv: Decimal = D0  # qualified dividends assumed (non-crypto)
 
 
 def show_for(year: int, today: date | None = None) -> bool:
@@ -211,7 +224,37 @@ def show_for(year: int, today: date | None = None) -> bool:
     return year >= today.year or (year == today.year - 1 and today < date(today.year, 4, 16))
 
 
-def estimate(ty: TaxYear, today: date | None = None) -> Estimate:
+def load_inputs(year: int, path: Path = INPUTS) -> dict[str, Decimal]:
+    d = (yaml.safe_load(path.read_text()) or {}) if path.exists() else {}
+    return {k: Decimal(str(v)) for k, v in (d.get(year) or {}).items()}
+
+
+def save_input(year: int, key: str, value: Decimal, path: Path = INPUTS) -> None:
+    d = (yaml.safe_load(path.read_text()) or {}) if path.exists() else {}
+    y = d.setdefault(year, {})
+    if value:
+        y[key] = float(value) if value != value.to_integral_value() else int(value)
+    else:
+        y.pop(key, None)
+        if not y:
+            d.pop(year)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(d, sort_keys=True))
+
+
+def parse_amount(text: str) -> Decimal | None:
+    """'$12,345.67' -> 12345.67; blank -> 0; anything else (or negative) -> None."""
+    t = text.strip().replace("$", "").replace(",", "")
+    if not t:
+        return D0
+    try:
+        v = Decimal(t)
+    except InvalidOperation:
+        return None
+    return v if v >= 0 and v.is_finite() else None
+
+
+def estimate(ty: TaxYear, today: date | None = None, qdiv: Decimal = D0) -> Estimate:
     today = today or date.today()
     tyr = table_year(ty.year)
     tables = TABLES[tyr]
@@ -225,8 +268,8 @@ def estimate(ty: TaxYear, today: date | None = None) -> Estimate:
         state = ""
 
     def row(label: str, other: dict[str, Decimal], shown: dict[str, Decimal | None], rate: Decimal | None) -> Row:
-        fed = {s: extra_tax(crypto[s], other[s], tables[s]) for s in STATUSES}
-        st = ({s: extra_state_tax(crypto[s], other[s], s, tables[s], SC[syr]) for s in STATUSES}
+        fed = {s: extra_tax(crypto[s], other[s], tables[s], qdiv) for s in STATUSES}
+        st = ({s: extra_state_tax(crypto[s], other[s], s, tables[s], SC[syr], qdiv) for s in STATUSES}
               if state else None)
         return Row(label, shown, fed, rate, st)
 
@@ -235,4 +278,4 @@ def estimate(ty: TaxYear, today: date | None = None) -> Estimate:
         other = {s: tables[s].ordinary[i][0] for s in STATUSES}
         rows.append(row(f"{rate * 100:.0f}% bracket", other, dict(other), rate))
     status = ty.profile.filing_status if ty.profile.filing_status in STATUSES else "single"
-    return Estimate(ty.year, tyr, status, crypto, rows, ty.carry_in, ty.year >= today.year, state, syr)
+    return Estimate(ty.year, tyr, status, crypto, rows, ty.carry_in, ty.year >= today.year, state, syr, qdiv)

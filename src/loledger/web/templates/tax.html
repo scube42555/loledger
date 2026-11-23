@@ -102,11 +102,19 @@
 
 {% if est %}
 <section class="card" id="estimate">
-  <div class="chain-head"><h3>Estimated {{ 'federal + ' ~ est.state if est.state else 'federal' }} tax · {{ est.year }}{% if est.ytd %} (year to date){% endif %}</h3></div>
+  <div class="chain-head"><h3>Estimated {{ 'federal + ' ~ est.state if est.state else 'federal' }} tax · {{ est.year }}{% if est.ytd %} (year to date){% endif %}</h3>
+    <form method="post" action="{{ url_for('set_estimate', year=est.year) }}" class="inline right"
+          title="Non-crypto qualified dividends (Form 1099-DIV box 1b) you expect for {{ est.year }}: taxed at 0/15/20% like long-term gains">
+      <label class="muted small">Qualified dividends
+        <input class="input" name="qualified_dividends" inputmode="decimal" placeholder="$0" style="width:9em"
+               value="{{ '{:,.0f}'.format(est.qdiv) if est.qdiv else '' }}"></label>
+      <button class="btn small">Update</button></form></div>
   {% set c = est.crypto[est.status] %}
   <p class="muted small">What this year's crypto would add to your federal{% if est.state %} and {{ est.state }}{% endif %} income tax, depending on where the rest of your
     income puts you. Crypto income ({{ s.income|money }}) and net short-term gain are taxed as ordinary income; net long-term gain
     at 0/15/20%{% if c.deduction %}; a net loss offsets up to $3,000 of other income ($1,500 married filing separately){% endif %}.
+    {% if est.qdiv %}Assumes {{ est.qdiv|money(cents=False) }} of qualified dividends besides, on the return either way (they
+    take up the 0% and 15% room first, and count toward the 3.8% tax).{% endif %}
     {% if est.carry_in[0] or est.carry_in[1] %}Includes the loss carried in: {{ est.carry_in[0]|money }} short-term /
     {{ est.carry_in[1]|money }} long-term.{% endif %}</p>
   <table class="t compact">

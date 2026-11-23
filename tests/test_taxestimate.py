@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from loledger.taxestimate import TABLES, crypto_part, estimate, extra_tax, income_tax, ordinary_tax, show_for
 from loledger.taxforms import Profile, TaxYear
@@ -84,3 +85,32 @@ def test_sc_2026_deducts_44_percent_of_long_term_gain_above_the_sciad_phase_out(
     est = estimate(ty, date(2026, 11, 23))
     assert est.state == "SC" and est.state_year == 2026
     assert est.rows[0].state is not None and est.rows[0].state["married_joint"] == D0  # under the SCIAD
+
+
+def test_qualified_dividends_use_up_the_0_percent_room_first() -> None:
+    c = crypto_part(_year("0", "20000"), "married_joint")
+    # 90k ordinary: without dividends 8,900 of the gain is at 0%; with 8,900 of dividends none is
+    assert extra_tax(c, D(90000), MFJ) == D("1665.00")
+    assert extra_tax(c, D(90000), MFJ, D(8900)) == D("3000.00")
+
+
+def test_qualified_dividends_count_toward_niit_and_sc_ordinary_income() -> None:
+    from loledger.taxestimate import SC, extra_state_tax
+    c = crypto_part(_year("0", "10000"), "married_joint")
+    other = D(250000) - MFJ.std - D(10000)  # dividends fill MAGI to the threshold: all 10k gain hit
+    assert extra_tax(c, other, MFJ, D(10000)) == D("1500.00") + D("380.000")
+    # SCIAD phase-out: dividends move AGI from 70k to 80k, where the crypto now erodes the SCIAD
+    assert (extra_state_tax(c, D(70000) - MFJ.std, "married_joint", MFJ, SC[2026], D(10000))
+            > extra_state_tax(c, D(70000) - MFJ.std, "married_joint", MFJ, SC[2026]))
+
+
+def test_estimate_inputs_round_trip(tmp_path: Path) -> None:
+    from loledger.taxestimate import load_inputs, parse_amount, save_input
+    p = tmp_path / "est.yaml"
+    assert load_inputs(2026, p) == {}
+    save_input(2026, "qualified_dividends", D("2500"), p)
+    assert load_inputs(2026, p) == {"qualified_dividends": D(2500)}
+    save_input(2026, "qualified_dividends", D0, p)
+    assert load_inputs(2026, p) == {} and p.read_text().strip() == "{}"
+    assert parse_amount("$2,500.50") == D("2500.50") and parse_amount("") == D0
+    assert parse_amount("-5") is None and parse_amount("abc") is None

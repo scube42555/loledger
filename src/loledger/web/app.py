@@ -200,7 +200,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         resp = app.make_response(render_template(
             "tax.html", s=s, cats=CATEGORIES, exports=EXPORTS, tabs=tabs, forms=forms, prev_y=prev_y, next_y=next_y,
             proceeds=data.profile.proceeds, boxes=box_summary(data.tax_year(year)),
-            est=taxestimate.estimate(data.tax_year(year)) if taxestimate.show_for(year) else None,
+            est=taxestimate.estimate(data.tax_year(year), qdiv=taxestimate.load_inputs(year).get(
+                "qualified_dividends", Decimal(0))) if taxestimate.show_for(year) else None,
             statuses=taxestimate.STATUSES,
             da_exchanges=exchanges() or ["Gemini", "Coinbase", "Crypto.com"]))
         resp.set_cookie(TAX_YEAR_COOKIE, str(year), max_age=365 * 86400, samesite="Lax", httponly=True)
@@ -223,6 +224,16 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
             abort(400)
         data.set_proceeds(choice)
         return redirect(request.referrer or url_for("portfolio"))
+
+    @app.post("/tax/<int:year>/estimate")
+    def set_estimate(year: int) -> Any:
+        if not taxestimate.show_for(year):
+            abort(400, "the estimate is only for years not yet filed")
+        v = taxestimate.parse_amount(request.form.get("qualified_dividends", ""))
+        if v is None:
+            abort(400, "enter a dollar amount, e.g. 2,500")
+        taxestimate.save_input(year, "qualified_dividends", v)
+        return redirect(url_for("tax", year=year) + "#estimate")
 
     @app.post("/refresh")
     def refresh() -> Any:

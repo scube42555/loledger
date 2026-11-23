@@ -182,7 +182,8 @@ The web app has three pages:
   gets an estimated federal tax table. It shows the extra tax the year's crypto adds (after the loss carryover)
   for married filing jointly, married filing separately and single, with your other taxable income at the start
   of each bracket. With `state: SC` in `tax_profile.yaml` it adds the South Carolina tax too (Act 110 rules
-from 2026). Credits are not included.
+from 2026). Credits are not included. A box on the card takes the year's expected non-crypto qualified
+  dividends (saved in `data/tax_estimate.yaml`), which the estimate includes.
 
 **E-filing with totals only.** Some software takes summary totals per Form 8949 box instead of importing
 every sale (Cash App Taxes, IRS Free File Fillable Forms). For those, enter the rows from
