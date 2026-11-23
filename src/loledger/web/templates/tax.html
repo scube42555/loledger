@@ -119,10 +119,10 @@
     take up the 0% and 15% room first, and count toward the 3.8% tax).{% endif %}
     {% if est.carry_in[0] or est.carry_in[1] %}Includes the loss carried in: {{ est.carry_in[0]|money }} short-term /
     {{ est.carry_in[1]|money }} long-term.{% endif %}</p>
-  <table class="t compact">
+  <table class="t compact est">
     <thead><tr><th>Your other taxable income</th>
       {% for k, lab in statuses.items() %}<th class="r {{ 'hl' if k == est.status }}">{{ lab }}{% if k == est.status %} ★{% endif %}</th>{% endfor %}</tr></thead>
-    {% if est.yours %}{% set r = est.yours %}<tr class="tot"><td>Your estimate
+    {% if est.yours %}{% set r = est.yours %}<tr class="yours"><td><b>Your estimate</b>
         <div class="muted small">{{ est.other_income|money(cents=False) }} other income{% if est.qdiv %} + {{ est.qdiv|money(cents=False) }} qualified dividends{% endif %}</div></td>
       {% for k in statuses %}{% set t = r.total(k) %}{% set m = est.marginal[k] %}<td class="r {{ 'hl' if k == est.status }}">
         <span class="{{ 'neg' if t > 0 else 'pos' if t < 0 else '' }}">{{ t|money(cents=False) }}</span>
