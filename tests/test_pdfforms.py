@@ -213,3 +213,15 @@ def test_blank_fields_on_a_plain_form_and_shared_ones_merge_across_packet_parts(
     assemble([a, x], out, rename={1: {"f1_01[0]": "shared_ssn"}})
     f = PdfReader(str(out)).get_fields() or {}
     assert len(f["shared_ssn"]["/Kids"]) == 3 and not any(k.endswith("f1_01[0]") for k in f)
+
+
+def test_comb_cells_are_fitted_to_the_printed_bars() -> None:
+    from loledger.pdfforms import _fit_comb
+    # the 2025 1040-X SSN box: 129 pt wide, bars printed 26.8 pt apart -> 13.4 pt cells starting 2.1 pt early
+    fit = _fit_comb([485.1, 511.9], 9, [447, 678, 576, 692])
+    assert fit is not None and fit[0] == pytest.approx(444.9) and fit[2] == pytest.approx(565.5)
+    # every cell edge printed (identity PIN, 6 cells)
+    fit = _fit_comb([510, 520, 530, 540, 550], 6, [498, 0, 562, 10])
+    assert fit is not None and fit[0] == pytest.approx(500) and fit[2] == pytest.approx(560)
+    assert _fit_comb([480.0], 9, [447, 678, 576, 692]) is None  # a pattern it doesn't know: left alone
+    assert _fit_comb([447.2, 485.1, 511.9, 575.8], 9, [447, 678, 576, 692]) is not None  # box edges ignored

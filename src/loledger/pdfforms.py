@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import ArrayObject, BooleanObject, DictionaryObject, NameObject, TextStringObject
+from pypdf.generic import ArrayObject, BooleanObject, DictionaryObject, FloatObject, NameObject, TextStringObject
 
 Check = tuple[int, str] | tuple[int, str, str]  # (page, field) or (page, field, on-state such as "/2")
 Part = Path | str | tuple[Path | str, Sequence[int]]  # whole file, or (file, 0-based page indexes)
@@ -380,6 +380,69 @@ def _draw_wrapped(src: Path, out: Path, items: Mapping[int, Sequence[Wrapped]]) 
         w.write(fh)
 
 
+COMB = 1 << 24  # text field flag: the value is spread over MaxLen equal cells
+
+
+def _bars(pdf: Path, page: int, rect: Sequence[float], scale: int = 4) -> list[float] | None:
+    """x positions (PDF points) of the vertical bars printed inside `rect` on 0-based `page`, found by rendering
+    that strip with pdftoppm. None if pdftoppm isn't installed."""
+    exe = shutil.which("pdftoppm")
+    if exe is None:
+        return None
+    x0, y0, x1, y1 = rect
+    height = float(PdfReader(str(pdf)).pages[page].mediabox.height)
+    out = subprocess.run([exe, "-r", str(72 * scale), "-f", str(page + 1), "-l", str(page + 1), "-gray",
+                          "-x", str(int(x0 * scale)), "-y", str(int((height - y1) * scale)),
+                          "-W", str(int((x1 - x0) * scale)), "-H", str(int((y1 - y0) * scale)), str(pdf)],
+                         capture_output=True).stdout
+    head = out.split(b"\n", 3)
+    if len(head) < 4 or head[0] != b"P5":
+        return []
+    w, h = map(int, head[1].split())
+    data = head[3]
+    groups: list[list[int]] = []
+    for x in range(w):
+        if sum(1 for y in range(h) if data[y * w + x] < 128) > h * 0.3:  # a dark column through the box
+            if groups and x - groups[-1][-1] <= 1:
+                groups[-1].append(x)
+            else:
+                groups.append([x])
+    return [x0 + (g[0] + g[-1]) / 2 / scale for g in groups]
+
+
+def _fit_comb(bars: Sequence[float], n: int, rect: Sequence[float]) -> list[float] | None:
+    """A rect whose n equal cells have their edges on the printed bars: every cell edge printed (n - 1 bars), or
+    the SSN pattern 3-2-4 (n = 9, 2 bars). None when the bars don't fit either pattern or the box."""
+    x0, y0, x1, y1 = rect
+    b = [v for v in bars if x0 + 1 < v < x1 - 1]  # inner bars only, not the box's own edges
+    if len(b) == n - 1 and n > 2:
+        c, start = (b[-1] - b[0]) / (n - 2), b[0] - (b[-1] - b[0]) / (n - 2)
+    elif n == 9 and len(b) == 2:
+        c = (b[1] - b[0]) / 2
+        start = b[0] - 3 * c
+    else:
+        return None
+    if c <= 0 or start < x0 - 4 or start + n * c > x1 + 4:
+        return None
+    return [start, y0, start + n * c, y1]
+
+
+def _align_combs(flat: Path, empty: Mapping[str, Sequence[Widget]]) -> None:
+    """Resize each empty comb field's widgets so their cells sit between the bars printed on the form. IRS boxes
+    are wider than their printed cells, so viewers otherwise put SSN digits on the bars."""
+    for widgets in empty.values():
+        for pi, a in widgets:
+            f = _field_of(a)
+            if f is None or not int(f[2].get("/Ff", 0)) & COMB or "/MaxLen" not in f[2]:
+                continue
+            r: Any = a["/Rect"]
+            rect = [float(v) for v in r]
+            bars = _bars(flat, pi, rect)
+            fit = _fit_comb(bars or [], int(f[2]["/MaxLen"]), rect)
+            if fit is not None:
+                a[NameObject("/Rect")] = ArrayObject([FloatObject(v) for v in fit])
+
+
 def flatten(src: Path | str, out: Path | str) -> None:
     """Burn form values into the page content (qpdf), leaving no fillable fields."""
     qpdf = shutil.which("qpdf")
@@ -420,6 +483,8 @@ def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True,
                 flatten(pre, flat)
                 if wrapped:
                     _draw_wrapped(flat, flat, wrapped)
+                if empty:
+                    _align_combs(flat, empty)
                 path = flat
             start = len(w.pages)
             w.append(str(path), pages=pages, import_outline=False)
