@@ -419,6 +419,12 @@ def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True) ->
                 path = flat
             start = len(w.pages)
             w.append(str(path), pages=pages, import_outline=False)
+            if src.get_fields():  # qpdf leaves widgets it can't draw (empty boxes without an appearance)
+                for j in range(start, len(w.pages)):
+                    pg: Any = w.pages[j]
+                    if "/Annots" in pg:
+                        keep = [a for a in pg["/Annots"] if a.get_object().get("/Subtype") != "/Widget"]
+                        pg[NameObject("/Annots")] = ArrayObject(keep)
             if empty:
                 order = pages if pages is not None else list(range(len(src.pages)))
                 root: Any = src.trailer["/Root"]

@@ -204,3 +204,5 @@ def test_blank_fields_on_a_plain_form_and_shared_ones_merge_across_packet_parts(
     f = PdfReader(str(out)).get_fields() or {}
     assert len(f["shared_ssn"]["/Kids"]) == 3  # one SSN for the whole packet
     assert "1-phone" in f and "1-ok" in f
+    r = PdfReader(str(out))
+    assert [len(p.get("/Annots") or []) for p in r.pages] == [3, 1, 1]  # no leftover copies of the boxes
