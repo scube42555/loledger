@@ -206,3 +206,10 @@ def test_blank_fields_on_a_plain_form_and_shared_ones_merge_across_packet_parts(
     assert "1-phone" in f and "1-ok" in f
     r = PdfReader(str(out))
     assert [len(p.get("/Annots") or []) for p in r.pages] == [3, 1, 1]  # no leftover copies of the boxes
+    # rename links another part's empty field into the shared one (an attached 1040-X copy's SSN box)
+    src, x = tmp_path / "form.pdf", tmp_path / "x.pdf"
+    _form(src)
+    fill(src, x, {0: {"f1_01[0]": ""}})
+    assemble([a, x], out, rename={1: {"f1_01[0]": "shared_ssn"}})
+    f = PdfReader(str(out)).get_fields() or {}
+    assert len(f["shared_ssn"]["/Kids"]) == 3 and not any(k.endswith("f1_01[0]") for k in f)

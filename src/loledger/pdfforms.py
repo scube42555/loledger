@@ -392,15 +392,19 @@ def flatten(src: Path | str, out: Path | str) -> None:
 SHARED = "shared_"  # a field named shared_<x> stays one field across a packet's parts (e.g. the SSN on every form)
 
 
-def _packet_name(part: int, name: str) -> str:
+def _packet_name(part: int, name: str, rename: Mapping[str, str] | None = None) -> str:
     last = name.rsplit(".", 1)[-1]
+    last = (rename or {}).get(last, last)
     return last if last.startswith(SHARED) else f"{part + 1}-{name.replace('.', '_')}"
 
 
-def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True) -> int:
+def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True,
+             rename: Mapping[int, Mapping[str, str]] | None = None) -> int:
     """Merge `parts` in order into `out`, flattening any that still have form fields; with keep_empty, fields left
     empty stay fillable, named "<part number>-<field name>" (fields named shared_<x> keep their name and are
-    merged across parts). Returns the page count."""
+    merged across parts). `rename` ({part index: {field: new name}}, by the field's last partial name such as
+    "f1_05[0]") links a part's empty field to a shared one, e.g. the SSN on an attached 1040-X copy to the SSN
+    typed on the state form. Returns the page count."""
     logging.getLogger("pypdf").setLevel(logging.ERROR)
     w = PdfWriter()
     with tempfile.TemporaryDirectory() as tmp:
@@ -429,7 +433,7 @@ def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True) ->
                 order = pages if pages is not None else list(range(len(src.pages)))
                 root: Any = src.trailer["/Root"]
                 acro: Any = root.get_object().get("/AcroForm")
-                add_fields(w, {_packet_name(i, name): ws for name, ws in empty.items()},
+                add_fields(w, {_packet_name(i, name, (rename or {}).get(i)): ws for name, ws in empty.items()},
                            {p: start + j for j, p in enumerate(order)}, acro.get_object() if acro else None)
         with open(out, "wb") as fh:
             w.write(fh)
