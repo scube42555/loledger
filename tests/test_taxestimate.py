@@ -114,3 +114,25 @@ def test_estimate_inputs_round_trip(tmp_path: Path) -> None:
     assert load_inputs(2026, p) == {} and p.read_text().strip() == "{}"
     assert parse_amount("$2,500.50") == D("2500.50") and parse_amount("") == D0
     assert parse_amount("-5") is None and parse_amount("abc") is None
+
+
+def test_your_estimate_row_from_other_income_before_the_standard_deduction() -> None:
+    ty = _year("0", "20000")
+    est = estimate(ty, date(2026, 11, 23), other_income=MFJ.std + D(90000))  # = 90k taxable
+    assert est.yours is not None and est.marginal is not None
+    assert est.yours.tax["married_joint"] == D("1665.00")
+    assert est.marginal["married_joint"] == (D("0.12"), D("0.15"))
+    none = estimate(ty, date(2026, 11, 23), other_income=D0)  # entered as 0: same as "No other income"
+    assert none.yours is not None and none.yours.tax == none.rows[0].tax
+    assert none.marginal is not None and none.marginal["married_joint"] == (D0, D0)
+    assert estimate(ty, date(2026, 11, 23)).yours is None
+
+
+def test_other_income_zero_is_kept_and_blank_clears(tmp_path: Path) -> None:
+    from loledger.taxestimate import load_inputs, parse_amount, save_input
+    p = tmp_path / "est.yaml"
+    save_input(2026, "other_income", D0, p)
+    assert load_inputs(2026, p) == {"other_income": D0}
+    assert parse_amount("", blank=None) is None
+    save_input(2026, "other_income", None, p)
+    assert load_inputs(2026, p) == {}

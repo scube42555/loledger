@@ -20,6 +20,8 @@ South Carolina (`state: SC` in tax_profile.yaml), the same difference for the st
   standard deduction.
 - 2025: SC taxable income = federal taxable income - 44% of the net long-term gain; 0% / 3% / 6%.
 
+Other income entered on the tax page (non-crypto, before deductions: wages, interest, ordinary dividends,
+retirement withdrawals, ...) gives a "your estimate" row: other taxable income = that - the standard deduction.
 Qualified dividends entered on the tax page (non-crypto) are on the return with and without the crypto: taxed
 at 0/15/20% stacked below the crypto's long-term gain, counted in the NIIT, and ordinary income for SC.
 
@@ -216,6 +218,21 @@ class Estimate:
     state: str = ""  # "SC" when estimated
     state_year: int = 0  # the SC rules year used
     qdiv: Decimal = D0  # qualified dividends assumed (non-crypto)
+    other_income: Decimal | None = None  # entered other income (before deductions); None = not entered
+    yours: Row | None = None  # the row for other_income
+    marginal: dict[str, tuple[Decimal, Decimal]] | None = None  # status -> (ordinary, long-term) rate, yours
+
+
+def marginal_rates(taxable: Decimal, pref: Decimal, b: Brackets) -> tuple[Decimal, Decimal]:
+    """Bracket the last dollar of ordinary income falls in, and the rate on the last dollar of long-term
+    gain / qualified dividends (0 when there is none)."""
+    taxable = max(taxable, D0)
+    pref = min(max(pref, D0), taxable)
+    ordinary = taxable - pref
+    ord_rate = D0 if ordinary <= 0 else max(r for lo, r in b.ordinary if ordinary > lo)
+    lt = D0 if pref <= 0 else Decimal("0.20") if taxable > b.ltcg[1] else Decimal("0.15") if taxable > b.ltcg[0] \
+        else D0
+    return ord_rate, lt
 
 
 def show_for(year: int, today: date | None = None) -> bool:
@@ -229,10 +246,11 @@ def load_inputs(year: int, path: Path = INPUTS) -> dict[str, Decimal]:
     return {k: Decimal(str(v)) for k, v in (d.get(year) or {}).items()}
 
 
-def save_input(year: int, key: str, value: Decimal, path: Path = INPUTS) -> None:
+def save_input(year: int, key: str, value: Decimal | None, path: Path = INPUTS) -> None:
+    """None (or 0 for qualified dividends) removes the entry."""
     d = (yaml.safe_load(path.read_text()) or {}) if path.exists() else {}
     y = d.setdefault(year, {})
-    if value:
+    if value is not None and (value or key == "other_income"):
         y[key] = float(value) if value != value.to_integral_value() else int(value)
     else:
         y.pop(key, None)
@@ -242,11 +260,11 @@ def save_input(year: int, key: str, value: Decimal, path: Path = INPUTS) -> None
     path.write_text(yaml.safe_dump(d, sort_keys=True))
 
 
-def parse_amount(text: str) -> Decimal | None:
-    """'$12,345.67' -> 12345.67; blank -> 0; anything else (or negative) -> None."""
+def parse_amount(text: str, blank: Decimal | None = D0) -> Decimal | None:
+    """'$12,345.67' -> 12345.67; blank -> `blank`; anything else (or negative) -> None."""
     t = text.strip().replace("$", "").replace(",", "")
     if not t:
-        return D0
+        return blank
     try:
         v = Decimal(t)
     except InvalidOperation:
@@ -254,7 +272,8 @@ def parse_amount(text: str) -> Decimal | None:
     return v if v >= 0 and v.is_finite() else None
 
 
-def estimate(ty: TaxYear, today: date | None = None, qdiv: Decimal = D0) -> Estimate:
+def estimate(ty: TaxYear, today: date | None = None, qdiv: Decimal = D0,
+             other_income: Decimal | None = None) -> Estimate:
     today = today or date.today()
     tyr = table_year(ty.year)
     tables = TABLES[tyr]
@@ -278,4 +297,11 @@ def estimate(ty: TaxYear, today: date | None = None, qdiv: Decimal = D0) -> Esti
         other = {s: tables[s].ordinary[i][0] for s in STATUSES}
         rows.append(row(f"{rate * 100:.0f}% bracket", other, dict(other), rate))
     status = ty.profile.filing_status if ty.profile.filing_status in STATUSES else "single"
-    return Estimate(ty.year, tyr, status, crypto, rows, ty.carry_in, ty.year >= today.year, state, syr, qdiv)
+    yours = marginal = None
+    if other_income is not None:
+        other = {s: other_income - tables[s].std for s in STATUSES}
+        yours = row("Your estimate", other, {s: None for s in STATUSES}, None)
+        marginal = {s: marginal_rates(other[s] + qdiv + crypto[s].ordinary + crypto[s].pref,
+                                      qdiv + crypto[s].pref, tables[s]) for s in STATUSES}
+    return Estimate(ty.year, tyr, status, crypto, rows, ty.carry_in, ty.year >= today.year, state, syr, qdiv,
+                    other_income, yours, marginal)
