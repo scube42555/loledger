@@ -178,7 +178,11 @@ The web app has three pages:
 - **Tax reports:** opens the last year you viewed, or the most recent one. ←/→ (buttons or arrow keys)
   switch years. Each year shows its summary, the Form 8949 summary totals, the downloads (IRS PDFs,
   TaxAct/TurboTax files, summary totals, CSV reports), and its Form 1099-DA section, where you add the
-  forms your exchanges send and reconcile them against your records.
+  forms your exchanges send and reconcile them against your records. A year whose return isn't due yet also
+  gets an estimated federal tax table. It shows the extra tax the year's crypto adds (after the loss carryover)
+  for married filing jointly, married filing separately and single, with your other taxable income at the start
+  of each bracket. With `state: SC` in `tax_profile.yaml` it adds the South Carolina tax too (Act 110 rules
+from 2026). Credits are not included.
 
 **E-filing with totals only.** Some software takes summary totals per Form 8949 box instead of importing
 every sale (Cash App Taxes, IRS Free File Fillable Forms). For those, enter the rows from

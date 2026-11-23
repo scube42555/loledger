@@ -14,7 +14,7 @@ from typing import Any
 
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 
-from .. import form1099da
+from .. import form1099da, taxestimate
 from ..taxforms import EXPORTS, box_summary
 from . import accounts as acc
 from .data import CATEGORIES, PARKED, AppData, account_label
@@ -200,6 +200,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         resp = app.make_response(render_template(
             "tax.html", s=s, cats=CATEGORIES, exports=EXPORTS, tabs=tabs, forms=forms, prev_y=prev_y, next_y=next_y,
             proceeds=data.profile.proceeds, boxes=box_summary(data.tax_year(year)),
+            est=taxestimate.estimate(data.tax_year(year)) if taxestimate.show_for(year) else None,
+            statuses=taxestimate.STATUSES,
             da_exchanges=exchanges() or ["Gemini", "Coinbase", "Crypto.com"]))
         resp.set_cookie(TAX_YEAR_COOKIE, str(year), max_age=365 * 86400, samesite="Lax", httponly=True)
         return resp

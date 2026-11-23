@@ -82,6 +82,7 @@ class Profile:
     carryover: dict[int, tuple[Decimal, Decimal]] = field(default_factory=dict)  # year -> (ST, LT) carried IN
     proceeds: str = "records"  # records | 1099da: use the proceeds a 1099-DA reports for the sales it covers
     closed_accounts: dict[str, Any] = field(default_factory=dict)  # exchange -> date closed, or {date, treatment}
+    state: str = ""  # state of residence for the tax estimate (SC supported)
 
     @classmethod
     def load(cls, path: Path) -> Profile:
@@ -93,7 +94,8 @@ class Profile:
         return cls(str(d.get("name") or ""), str(d.get("ssn") or ""), str(d.get("filing_status") or "single"),
                    list(d.get("brokers_1099da") or DEFAULT_1099DA_BROKERS), co,
                    "1099da" if str(d.get("proceeds") or "").lower().replace("-", "") == "1099da" else "records",
-                   {str(k): (v if isinstance(v, dict) else str(v)) for k, v in (d.get("closed_accounts") or {}).items()})
+                   {str(k): (v if isinstance(v, dict) else str(v)) for k, v in (d.get("closed_accounts") or {}).items()},
+                   str(d.get("state") or ""))
 
     @property
     def loss_limit(self) -> Decimal:

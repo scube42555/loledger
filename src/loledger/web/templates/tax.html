@@ -100,6 +100,38 @@
   </aside>
 </div>
 
+{% if est %}
+<section class="card" id="estimate">
+  <div class="chain-head"><h3>Estimated {{ 'federal + ' ~ est.state if est.state else 'federal' }} tax · {{ est.year }}{% if est.ytd %} (year to date){% endif %}</h3></div>
+  {% set c = est.crypto[est.status] %}
+  <p class="muted small">What this year's crypto would add to your federal{% if est.state %} and {{ est.state }}{% endif %} income tax, depending on where the rest of your
+    income puts you. Crypto income ({{ s.income|money }}) and net short-term gain are taxed as ordinary income; net long-term gain
+    at 0/15/20%{% if c.deduction %}; a net loss offsets up to $3,000 of other income ($1,500 married filing separately){% endif %}.
+    {% if est.carry_in[0] or est.carry_in[1] %}Includes the loss carried in: {{ est.carry_in[0]|money }} short-term /
+    {{ est.carry_in[1]|money }} long-term.{% endif %}</p>
+  <table class="t compact">
+    <thead><tr><th>Your other taxable income</th>
+      {% for k, lab in statuses.items() %}<th class="r {{ 'hl' if k == est.status }}">{{ lab }}{% if k == est.status %} ★{% endif %}</th>{% endfor %}</tr></thead>
+    {% for r in est.rows %}<tr><td>{% if r.rate %}Starts in the <b>{{ r.label }}</b>{% else %}{{ r.label }} <span class="muted small">(standard deduction)</span>{% endif %}</td>
+      {% for k in statuses %}<td class="r {{ 'hl' if k == est.status }}">
+        {% set t = r.total(k) %}<span class="{{ 'neg' if t > 0 else 'pos' if t < 0 else '' }}">{{ t|money(cents=False) }}</span>
+        {% if r.state %}<div class="muted small">{{ r.tax[k]|money(cents=False) }} federal + {{ r.state[k]|money(cents=False) }} {{ est.state }}</div>{% endif %}
+        {% if r.other[k] %}<div class="muted small">from {{ r.other[k]|money(cents=False) }}</div>{% endif %}</td>{% endfor %}</tr>{% endfor %}
+    <tr><td class="muted">Loss carried into {{ est.year + 1 }} (ST / LT)</td>
+      {% for k in statuses %}{% set co = est.crypto[k].carry_out %}<td class="r muted {{ 'hl' if k == est.status }}">
+        {{ co[0]|money(cents=False) }} / {{ co[1]|money(cents=False) }}</td>{% endfor %}</tr>
+  </table>
+  <p class="muted small">Each row assumes your other taxable income (after deductions) is the start of that bracket for the filing
+    status; a negative amount is tax saved. Includes the 3.8% net investment income tax where it applies. {{ est.table_year }} IRS
+    brackets{% if est.table_year != est.year %} (the latest known){% endif %}.
+    {% if est.state == 'SC' %}SC: {% if est.state_year >= 2026 %}federal AGI (taken as taxable income + the standard deduction) minus the
+    SC income adjusted deduction (phased out with AGI) and 44% of the net long-term gain, at 1.99% / 5.21% (Act 110){% else %}federal
+    taxable income minus 44% of the net long-term gain, at 0% / 3% / 6%{% endif %}; {{ est.state_year }} rules{% if est.state_year != est.year %}
+    (the latest known){% endif %}.{% else %}Set <code>state: SC</code> in tax_profile.yaml for a state estimate.{% endif %}
+    Not included: credits, AMT, phase-outs, and gains or losses outside crypto. ★ = filing status in tax_profile.yaml.</p>
+</section>
+{% endif %}
+
 <section class="card" id="da">
   <div class="chain-head"><h3>Form 1099-DA · {{ s.year }}</h3>
     {% if s.year >= 2025 %}<button class="btn small primary right" onclick="document.getElementById('da-add').showModal()">+ Add 1099-DA</button>{% endif %}</div>
