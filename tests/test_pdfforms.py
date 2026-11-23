@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pypdf import PdfReader, PdfWriter
@@ -12,7 +13,7 @@ from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, F
                            TextStringObject)
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from loledger.pdfforms import assemble, fill, overlay
+from loledger.pdfforms import add_fields, assemble, fill, overlay
 
 
 def _n(s: str) -> NameObject:
@@ -98,9 +99,36 @@ def test_assemble_flattens_filled_forms_in_order(tmp_path: Path) -> None:
     out = tmp_path / "packet.pdf"
     assert assemble([b, (tmp_path / "plain.pdf", [1]), a], out) == 3
     r = PdfReader(str(out))
-    assert not r.get_fields()
     assert "SECOND FORM" in r.pages[0].extract_text() and "FIRST FORM" in r.pages[2].extract_text()
     assert not r.pages[1].get("/Annots")
+    # filled values are burnt in; the boxes left empty stay fillable, named per part so they can't collide
+    fields = r.get_fields() or {}
+    assert sorted(fields) == ["1-Page1[0]_c1_1[0]", "1-Page1[0]_c1_1[1]", "3-Page1[0]_c1_1[1]"]
+    acro: Any = r.trailer["/Root"]
+    acro = acro["/AcroForm"]
+    assert acro["/NeedAppearances"] and "/Helv" in acro["/DR"]["/Font"]
+    assert assemble([a], tmp_path / "flat.pdf", keep_empty=False) == 1
+    assert not PdfReader(str(tmp_path / "flat.pdf")).get_fields()
+
+
+@pytest.mark.skipif(shutil.which("qpdf") is None, reason="qpdf not installed")
+def test_assemble_keeps_an_empty_field_repeated_across_pages_as_one_field(tmp_path: Path) -> None:
+    src, two = tmp_path / "form.pdf", tmp_path / "two.pdf"
+    _form(src)
+    r = PdfReader(str(src))
+    w = PdfWriter()
+    w.add_blank_page(300, 200)
+    w.add_blank_page(300, 200)
+    annots: Any = r.pages[0]["/Annots"]
+    root: Any = r.trailer["/Root"]
+    ssn = annots[2].get_object()  # the f1_01 text box, as a header field on both pages
+    assert add_fields(w, {"ssn": [(0, ssn), (1, ssn)]}, {0: 0, 1: 1}, root["/AcroForm"]) == 1
+    with open(two, "wb") as fh:
+        w.write(fh)
+    out = tmp_path / "packet.pdf"
+    assemble([two], out)
+    f = PdfReader(str(out)).get_fields() or {}
+    assert len(f["1-ssn"]["/Kids"]) == 2  # one field, a widget on each page: typed once, shown twice
 
 
 def _blank(path: Path, pages: int = 2) -> None:
@@ -135,3 +163,25 @@ def test_overlay_rejects_bad_pages_and_kinds(tmp_path: Path) -> None:
         overlay(src, tmp_path / "x.pdf", {2: [("l", 0, 0, "a")]})
     with pytest.raises(ValueError):
         overlay(src, tmp_path / "x.pdf", {0: [("c", 0, 0, "a")]})
+
+
+@pytest.mark.skipif(shutil.which("qpdf") is None, reason="qpdf not installed")
+def test_assemble_wraps_a_long_multiline_value_inside_its_box(tmp_path: Path) -> None:
+    src, filled, out = tmp_path / "form.pdf", tmp_path / "filled.pdf", tmp_path / "packet.pdf"
+    _form(src)
+    w = PdfWriter(clone_from=PdfReader(str(src)))
+    annots: Any = w.pages[0]["/Annots"]
+    box = annots[2].get_object()
+    box[NameObject("/Ff")] = FloatObject(4096)  # multi-line, like the 1040-X Part II explanation
+    box[NameObject("/Rect")] = ArrayObject([FloatObject(x) for x in (20, 20, 280, 120)])
+    with open(src, "wb") as fh:
+        w.write(fh)
+    text = " ".join(f"word{i}" for i in range(80)) + " THE END"
+    fill(src, filled, {0: {"f1_01[0]": text}})
+    assemble([filled], out)
+    page = PdfReader(str(out)).pages[0]
+    got = page.extract_text()
+    assert "word0" in got and "THE END" in got  # qpdf alone keeps only what fits on the first line
+    xs: list[float] = []
+    page.extract_text(visitor_text=lambda t, cm, tm, fd, fs: xs.append(tm[4]) if t.strip() else None)
+    assert xs and min(xs) >= 20 and max(xs) < 280

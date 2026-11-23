@@ -321,10 +321,18 @@ def _widgets(page: Any) -> dict[str, tuple[list[float], bool]]:
 MONEY = re.compile(r"^\(?-?[\d,]+\.\d\d\)?$")
 
 
-def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]]) -> Any:
+def _all_fields(reader: Any, page: int) -> dict[str, str]:
+    """Every text field and checkbox on a template page, each kept under its own name (see _fill_pages)."""
+    return {n: n for n, _ in _widgets(reader.pages[page]).items()}
+
+
+def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]],
+                keep: dict[int, dict[str, str]] | None = None) -> Any:
     """One copy of template page `p` per entry with `values` (partial field names) drawn as a text layer at the
     fields' positions (money right-aligned, checkboxes as X). The blank page is shared, so 100s of pages stay
-    small and fast; the output has no fillable fields left."""
+    small and fast. The template's fields are removed, except `keep` ({template page: {partial name: field
+    name}}): those left empty on a page stay fillable there, under the given field name. Pages that share a field
+    name share the field, so a name/SSN header typed once fills every page."""
     from io import BytesIO
 
     from pypdf import PdfReader, PdfWriter
@@ -366,6 +374,19 @@ def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]]) -> Any:
         if "/Annots" in page:
             del page["/Annots"]
         page.merge_page(overlay.pages[i])
+    if keep:
+        from .pdfforms import _name, add_fields
+
+        widgets = {p: {str(_name(a.get_object())): a.get_object() for a in reader.pages[p].get("/Annots", [])
+                       if a.get_object().get("/Subtype") == "/Widget"} for p in keep}
+        groups: dict[str, list[tuple[int, Any]]] = defaultdict(list)
+        for i, (p, values) in enumerate(pages):
+            for partial, field in (keep.get(p) or {}).items():
+                if not values.get(partial) and partial in widgets[p]:
+                    groups[field].append((i, widgets[p][partial]))
+        root: Any = reader.trailer["/Root"]
+        acro = root.get("/AcroForm")
+        add_fields(out, groups, {i: i for i in range(len(pages))}, acro.get_object() if acro else None)
     return out
 
 
@@ -444,7 +465,8 @@ def f8949_pdf(ty: TaxYear, consolidated: bool = False) -> tuple[Any, int]:
             pages.append((page, v))
     if not pages:
         return None, used
-    return _fill_pages(path, pages), used
+    keep = {pg: {lay[pg]["header"][0]: "name", lay[pg]["header"][1]: "ssn"} for pg in (0, 1)}
+    return _fill_pages(path, pages, keep), used
 
 
 def statement_pdf(ty: TaxYear, out: Any) -> None:
@@ -511,7 +533,7 @@ def schedule_d_pdf(ty: TaxYear) -> tuple[Any, int]:
     v2 = {m2["16"]: _money(sd["16"])} if sd.get("16") else {}
     if sd.get("21"):
         v2[m2["21"]] = _money(-sd["21"])  # printed ( ) on the form
-    return _fill_pages(path, [(0, v1), (1, v2)]), used
+    return _fill_pages(path, [(0, v1), (1, v2)], {0: _all_fields(r, 0), 1: _all_fields(r, 1)}), used
 
 
 S1_MAP = {  # line -> partial field name, per form year
@@ -542,7 +564,7 @@ def schedule_1_pdf(ty: TaxYear) -> tuple[Any, int]:
         v[m["8z"]] = amt
     v[m["9"]] = amt
     v[m["10"]] = amt
-    return _fill_pages(path, [(0, v)]), used
+    return _fill_pages(path, [(0, v)], {0: _all_fields(r, 0)}), used
 
 
 # --------------------------------------------------------------------------------- software and CSVs
@@ -696,19 +718,16 @@ def f8949_bytes(ty: TaxYear) -> bytes:
 
 
 def f8949_consolidated_bytes(ty: TaxYear) -> bytes:
-    from pypdf import PdfReader, PdfWriter
+    from pypdf import PdfReader
 
     wc, _ = f8949_pdf(ty, consolidated=True)
     if wc is None:
         return b""
     st = io.BytesIO()
     statement_pdf(ty, st)
-    merged = PdfWriter()
-    for p in wc.pages:
-        merged.add_page(p)
-    for p in PdfReader(io.BytesIO(st.getvalue())).pages:
-        merged.add_page(p)
-    return _pdf_bytes(merged)
+    for p in PdfReader(io.BytesIO(st.getvalue())).pages:  # appended to the form itself: keeps its fillable fields
+        wc.add_page(p)
+    return _pdf_bytes(wc)
 
 
 @dataclass(frozen=True)

@@ -59,7 +59,7 @@ Your own data stays out of git (see `.gitignore`). Start from the samples:
 | `addresses.csv` | `addresses.example.csv` | your wallets / accounts (rows labelled "Gift" are recipients, not yours) |
 | `overrides.yaml` | `overrides.example.yaml` | user-confirmed facts applied after classification |
 | `manual.yaml` | `manual.example.yaml` | events on chains whose history can't be fetched |
-| `tax_profile.yaml` | `tax_profile.example.yaml` | name, filing status, 1099-DA brokers, loss carryovers |
+| `tax_profile.yaml` | `tax_profile.example.yaml` | name, filing status, 1099-DA brokers, loss carryovers (an `ssn:` is optional: the PDFs leave it fillable) |
 | `exchange_deposits.yaml` | `exchange_deposits.example.yaml` | your own deposit addresses at exchanges |
 | `.env` | `.env.example` | API keys |
 

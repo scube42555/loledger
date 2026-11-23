@@ -99,9 +99,18 @@ After classification:
   `deposit:`, `vault:`, `xp-chain:` and `offlist:`.
 - `taxforms.py` builds the tax-year view (`build_year`). Exports are registered in the `EXPORTS` list,
   which drives both `loledger tax` and the web download dialog. It fills the official IRS PDFs (downloaded
-  once into `data/irs_forms/`).
+  once into `data/irs_forms/`). Values are printed as a text layer and the form fields are removed, except
+  boxes left empty (`keep` in `_fill_pages`): those stay fillable, so the user can complete the PDF in a viewer.
+  The Form 8949 name/SSN header is a single field shared by every page.
 - `form1099da.py`: 1099-DA import and reconciliation (stored in `data/1099da/`).
-- `pdfforms.py`: generic fillable-PDF filling and overlay (1040-X packets).
+- `pdfforms.py`: generic fillable-PDF filling (`fill`), overlay for forms without fields (SCDOR), and
+  `assemble` for mailing packets. `assemble` flattens filled values with qpdf and draws multi-line boxes itself,
+  word-wrapped (qpdf would cut them to one line). Boxes left empty stay fillable, named `<part>-<field>`.
+  - Amended-return packets are built OUTSIDE `src/`, by the user's own gitignored scripts in
+    `exports/amended/`: `fill_*.py` (one per form and year, calling `pdfforms.fill`/`overlay`) write the
+    parts, then `build_packets.py` assembles them in mailing order. `AMENDMENT_NOTES.md` there explains the
+    filings. Look there before changing anything packet-related, and re-run those scripts after changing
+    `pdfforms`. They hold the user's personal data, so never copy their contents into tracked files.
 - `reconcile.py` checks custody (holdings vs live balances). `coinledger.py` writes the CoinLedger
   comparison report.
 
