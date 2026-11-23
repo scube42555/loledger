@@ -256,6 +256,11 @@ class AppData:
                 v["unpriced"] += 1
             else:
                 v["mv"] += q * p
+        for acct, q in self.cash.items():  # USD cash at face value
+            v = by[acct]
+            v["assets"] += 1
+            v["cost"] += q
+            v["mv"] += q
         return dict(by)
 
     def account_assets(self) -> dict[str, list[dict[str, Any]]]:
@@ -279,8 +284,12 @@ class AppData:
                 mv = None if p is None else q * p
                 rows.append({"fam": fam, "symbol": self.symbol.get(fam, fam.upper()), "qty": q, "cost": cost,
                              "price": p, "mv": mv, "dust": cost < Decimal("0.01") and (mv is None or mv < Decimal("0.01"))})
-            rows.sort(key=lambda r: (-(r["mv"] or 0), r["symbol"]))
             out[acct] = rows
+        for acct, q in self.cash.items():  # USD cash at face value
+            out.setdefault(acct, []).append({"fam": "usd", "symbol": "USD", "qty": q, "cost": q, "price": Decimal(1),
+                                             "mv": q, "dust": q < Decimal("0.01")})
+        for rows in out.values():
+            rows.sort(key=lambda r: (-(r["mv"] or 0), r["symbol"]))
         return out
 
     def wallet_accounts(self, chain: str, address: str, label: str) -> list[str]:
