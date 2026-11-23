@@ -13,7 +13,7 @@ from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, F
                            TextStringObject)
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
-from loledger.pdfforms import add_fields, assemble, fill, overlay
+from loledger.pdfforms import add_blank_fields, add_fields, assemble, fill, overlay
 
 
 def _n(s: str) -> NameObject:
@@ -185,3 +185,22 @@ def test_assemble_wraps_a_long_multiline_value_inside_its_box(tmp_path: Path) ->
     xs: list[float] = []
     page.extract_text(visitor_text=lambda t, cm, tm, fd, fs: xs.append(tm[4]) if t.strip() else None)
     assert xs and min(xs) >= 20 and max(xs) < 280
+
+
+@pytest.mark.skipif(shutil.which("qpdf") is None, reason="qpdf not installed")
+def test_blank_fields_on_a_plain_form_and_shared_ones_merge_across_packet_parts(tmp_path: Path) -> None:
+    a, b, out = tmp_path / "a.pdf", tmp_path / "b.pdf", tmp_path / "packet.pdf"
+    _blank(a, 2)
+    _blank(b, 1)
+    add_blank_fields(a, a, {0: [("shared_ssn", (40, 700, 200, 714), "text"), ("phone", (40, 680, 200, 694), "text"),
+                                ("ok", (300, 680, 310, 690), "check")],
+                            1: [("shared_ssn", (400, 750, 500, 764), "text")]})
+    add_blank_fields(b, b, {0: [("shared_ssn", (40, 700, 200, 714), "text")]})
+    f = PdfReader(str(a)).get_fields() or {}
+    assert len(f["shared_ssn"]["/Kids"]) == 2 and f["ok"]["/FT"] == "/Btn" and f["phone"]["/FT"] == "/Tx"
+    with pytest.raises(ValueError):
+        add_blank_fields(b, tmp_path / "x.pdf", {0: [("x", (0, 0, 1, 1), "radio")]})
+    assert assemble([a, b], out) == 3
+    f = PdfReader(str(out)).get_fields() or {}
+    assert len(f["shared_ssn"]["/Kids"]) == 3  # one SSN for the whole packet
+    assert "1-phone" in f and "1-ok" in f

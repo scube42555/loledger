@@ -210,10 +210,14 @@ def add_fields(w: PdfWriter, groups: Mapping[str, Sequence[Widget]], page_map: M
         if not kids:
             continue
         attrs = _field_of(kids[0][1])
-        parent: Any = DictionaryObject({NameObject("/T"): TextStringObject(name), NameObject("/Kids"): ArrayObject()})
-        for k, v in (attrs[2] if attrs else {}).items():
-            parent[NameObject(k)] = v.clone(w) if hasattr(v, "clone") else v
-        pref = w._add_object(parent)
+        existing = next((f for f in fields if str(f.get_object().get("/T")) == name), None)
+        if existing is not None:  # same name from another part: one field with more widgets
+            pref, parent = existing, existing.get_object()
+        else:
+            parent = DictionaryObject({NameObject("/T"): TextStringObject(name), NameObject("/Kids"): ArrayObject()})
+            for k, v in (attrs[2] if attrs else {}).items():
+                parent[NameObject(k)] = v.clone(w) if hasattr(v, "clone") else v
+            pref = w._add_object(parent)
         for wi, a in kids:
             page: Any = w.pages[wi]
             # a new widget per page (cloning `a` again would return the cached copy); its appearance streams
@@ -228,9 +232,91 @@ def add_fields(w: PdfWriter, groups: Mapping[str, Sequence[Widget]], page_map: M
                 page[NameObject("/Annots")] = ArrayObject()
             page["/Annots"].get_object().append(ref)
             parent["/Kids"].append(ref)
-        fields.append(pref)
-        n += 1
+        if existing is None:
+            fields.append(pref)
+            n += 1
     return n
+
+
+Blank = tuple[str, tuple[float, float, float, float], str]  # (field name, (x0, y0, x1, y1), "text" | "check")
+
+
+def add_blank_fields(src: Path | str, out: Path | str, fields: Mapping[int, Sequence[Blank]],
+                     size: float = 9) -> None:
+    """Add empty fillable boxes to a form that has none (SCDOR forms): {page: [(name, rect, kind)]}. Boxes with
+    the same name are one field (typed once, shown everywhere); name it shared_<x> to also share it across the
+    parts of an `assemble`d packet. Text is Helvetica `size` pt; a checkbox shows a check mark when ticked."""
+    from io import BytesIO
+
+    from pypdf.generic import DecodedStreamObject, FloatObject, NumberObject
+
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    w = PdfWriter(clone_from=PdfReader(BytesIO(Path(src).read_bytes())))  # in memory: `out` may be `src`
+    helv = w._add_object(DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"), NameObject("/Encoding"): NameObject("/WinAnsiEncoding")}))
+    zadb = w._add_object(DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/ZapfDingbats")}))
+    acro: Any = w._root_object.get("/AcroForm")
+    if acro is None:
+        acro = DictionaryObject()
+        w._root_object[NameObject("/AcroForm")] = w._add_object(acro)
+    acro = acro.get_object()
+    if "/XFA" in acro:  # Acrobat would show the XFA form and ignore these boxes (SC Schedule AMD has one)
+        del acro["/XFA"]
+    dr: Any = acro.setdefault(NameObject("/DR"), DictionaryObject()).get_object()
+    fonts: Any = dr.setdefault(NameObject("/Font"), DictionaryObject()).get_object()
+    fonts[NameObject("/Helv")] = helv  # added to the form's own fonts (its barcode field uses them)
+    fonts[NameObject("/ZaDb")] = zadb
+    acro.setdefault(NameObject("/DA"), TextStringObject(f"/Helv {size:g} Tf 0 g"))
+    # no NeedAppearances: it would make qpdf redraw existing fields, turning SC's barcode field into plain digits
+    all_fields: Any = acro.setdefault(NameObject("/Fields"), ArrayObject())
+    parents: dict[str, Any] = {}
+
+    def stream(body: bytes, wd: float, ht: float, font: Any = None) -> Any:
+        st = DecodedStreamObject()
+        st.set_data(body)
+        st.update({NameObject("/Type"): NameObject("/XObject"), NameObject("/Subtype"): NameObject("/Form"),
+                   NameObject("/BBox"): ArrayObject([FloatObject(0), FloatObject(0), FloatObject(wd), FloatObject(ht)])})
+        if font is not None:
+            st[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/ZaDb"): font})})
+        return w._add_object(st)
+
+    for pi, items in fields.items():
+        page: Any = w.pages[pi]
+        if "/Annots" not in page:
+            page[NameObject("/Annots")] = ArrayObject()
+        for name, (x0, y0, x1, y1), kind in items:
+            if kind not in ("text", "check"):
+                raise ValueError(f"field kind must be 'text' or 'check', not {kind!r}")
+            if name not in parents:
+                parent = DictionaryObject({
+                    NameObject("/T"): TextStringObject(name), NameObject("/Kids"): ArrayObject(),
+                    NameObject("/FT"): NameObject("/Tx" if kind == "text" else "/Btn")})
+                if kind == "text":
+                    parent[NameObject("/DA")] = TextStringObject(f"/Helv {size:g} Tf 0 g")
+                else:
+                    parent[NameObject("/V")] = NameObject("/Off")
+                parents[name] = w._add_object(parent)
+                all_fields.append(parents[name])
+            kid = DictionaryObject({
+                NameObject("/Type"): NameObject("/Annot"), NameObject("/Subtype"): NameObject("/Widget"),
+                NameObject("/Rect"): ArrayObject([FloatObject(v) for v in (x0, y0, x1, y1)]),
+                NameObject("/F"): NumberObject(4), NameObject("/Parent"): parents[name],
+                NameObject("/P"): page.indirect_reference})
+            if kind == "check":
+                wd, ht = x1 - x0, y1 - y0
+                tick = f"q BT 0 g /ZaDb {min(wd, ht) * 0.8:.1f} Tf {wd * 0.15:.1f} {ht * 0.2:.1f} Td (4) Tj ET Q"
+                kid[NameObject("/AS")] = NameObject("/Off")
+                kid[NameObject("/MK")] = DictionaryObject({NameObject("/CA"): TextStringObject("4")})
+                kid[NameObject("/AP")] = DictionaryObject({NameObject("/N"): DictionaryObject({
+                    NameObject("/Yes"): stream(tick.encode(), wd, ht, zadb), NameObject("/Off"): stream(b"", wd, ht)})})
+            ref = w._add_object(kid)
+            page["/Annots"].append(ref)
+            parents[name].get_object()["/Kids"].append(ref)
+    with open(out, "wb") as fh:
+        w.write(fh)
 
 
 Wrapped = tuple[list[float], str, float]  # (rect, text, font size; 0 = auto)
@@ -303,9 +389,18 @@ def flatten(src: Path | str, out: Path | str) -> None:
                    check=True, capture_output=True)
 
 
+SHARED = "shared_"  # a field named shared_<x> stays one field across a packet's parts (e.g. the SSN on every form)
+
+
+def _packet_name(part: int, name: str) -> str:
+    last = name.rsplit(".", 1)[-1]
+    return last if last.startswith(SHARED) else f"{part + 1}-{name.replace('.', '_')}"
+
+
 def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True) -> int:
     """Merge `parts` in order into `out`, flattening any that still have form fields; with keep_empty, fields left
-    empty stay fillable, named "<part number>-<field name>". Returns the page count."""
+    empty stay fillable, named "<part number>-<field name>" (fields named shared_<x> keep their name and are
+    merged across parts). Returns the page count."""
     logging.getLogger("pypdf").setLevel(logging.ERROR)
     w = PdfWriter()
     with tempfile.TemporaryDirectory() as tmp:
@@ -328,7 +423,7 @@ def assemble(parts: Sequence[Part], out: Path | str, keep_empty: bool = True) ->
                 order = pages if pages is not None else list(range(len(src.pages)))
                 root: Any = src.trailer["/Root"]
                 acro: Any = root.get_object().get("/AcroForm")
-                add_fields(w, {f"{i + 1}-{name.replace('.', '_')}": ws for name, ws in empty.items()},
+                add_fields(w, {_packet_name(i, name): ws for name, ws in empty.items()},
                            {p: start + j for j, p in enumerate(order)}, acro.get_object() if acro else None)
         with open(out, "wb") as fh:
             w.write(fh)

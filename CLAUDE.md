@@ -106,6 +106,9 @@ After classification:
 - `pdfforms.py`: generic fillable-PDF filling (`fill`), overlay for forms without fields (SCDOR), and
   `assemble` for mailing packets. `assemble` flattens filled values with qpdf and draws multi-line boxes itself,
   word-wrapped (qpdf would cut them to one line). Boxes left empty stay fillable, named `<part>-<field>`.
+  `add_blank_fields` adds fillable boxes to forms that have none (SCDOR), at measured rects. A field named
+  `shared_<x>` stays one field across a whole packet (the SSN typed once fills every form). It must not set
+  NeedAppearances, or qpdf redraws SC Schedule AMD's barcode field as plain digits.
   - Amended-return packets are built OUTSIDE `src/`, by the user's own gitignored scripts in
     `exports/amended/`: `fill_*.py` (one per form and year, calling `pdfforms.fill`/`overlay`) write the
     parts, then `build_packets.py` assembles them in mailing order. `AMENDMENT_NOTES.md` there explains the
