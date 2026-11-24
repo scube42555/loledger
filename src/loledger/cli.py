@@ -688,8 +688,9 @@ def cmd_basis(args: argparse.Namespace, settings: Settings, store: Store) -> int
     from .taxforms import Profile
 
     legs = load_legs(Path(args.classified), Path(args.manual))
-    closures = Profile.load(Path("tax_profile.yaml")).closed_accounts
-    res = Engine(pre=args.method_pre, post=args.method_post, closures=closures).run(legs)
+    profile = Profile.load(Path("tax_profile.yaml"))
+    res = Engine(pre=args.method_pre, post=args.method_post, closures=profile.closed_accounts,
+                 gifts=profile.gifts_received).run(legs)
     paths = write_reports(res, Path(args.out_dir))
     print(f"{len(legs)} legs -> {len(res.disposals)} disposals, {len(res.income)} income, {len(res.futures)} futures, "
           f"{len(res.flags)} flags")
@@ -702,7 +703,8 @@ def cmd_tax(args: argparse.Namespace, settings: Settings, store: Store) -> int:
     from .taxforms import Profile, export_year
 
     profile = Profile.load(Path(args.profile))
-    res = Engine(pre=args.method_pre, post=args.method_post, closures=profile.closed_accounts).run(
+    res = Engine(pre=args.method_pre, post=args.method_post, closures=profile.closed_accounts,
+                 gifts=profile.gifts_received).run(
         load_legs(Path(args.classified), Path(args.manual)))
     if args.proceeds:
         profile.proceeds = args.proceeds

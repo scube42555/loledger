@@ -108,7 +108,8 @@ class AppData:
             classified = self.root / "classified.csv"
             self.profile = Profile.load(self.root / "tax_profile.yaml")
             legs = load_legs(classified, self.root / "manual.yaml")
-            self.res: Result = Engine(pre=self.pre, post=self.post, closures=self.profile.closed_accounts).run(legs)
+            self.res: Result = Engine(pre=self.pre, post=self.post, closures=self.profile.closed_accounts,
+                                      gifts=self.profile.gifts_received).run(legs)
             self.cash = fiat_balances(legs, self.profile.closed_accounts)
             if self.proceeds_choice:
                 self.profile.proceeds = self.proceeds_choice

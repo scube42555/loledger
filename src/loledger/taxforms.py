@@ -108,6 +108,7 @@ class Profile:
     proceeds: str = "records"  # records | 1099da: use the proceeds a 1099-DA reports for the sales it covers
     closed_accounts: dict[str, Any] = field(default_factory=dict)  # exchange -> date closed, or {date, treatment}
     state: str = ""  # state of residence for the tax estimate (SC supported)
+    gifts_received: list[dict[str, Any]] = field(default_factory=list)  # gifts with the donor's basis (costbasis.Engine)
 
     @classmethod
     def load(cls, path: Path) -> Profile:
@@ -120,7 +121,7 @@ class Profile:
                    list(d.get("brokers_1099da") or DEFAULT_1099DA_BROKERS), co,
                    "1099da" if str(d.get("proceeds") or "").lower().replace("-", "") == "1099da" else "records",
                    {str(k): (v if isinstance(v, dict) else str(v)) for k, v in (d.get("closed_accounts") or {}).items()},
-                   str(d.get("state") or ""))
+                   str(d.get("state") or ""), list(d.get("gifts_received") or []))
 
     @property
     def loss_limit(self) -> Decimal:
@@ -209,7 +210,7 @@ def build_lines(res: Result, year: int, profile: Profile, da: dict[str, bool] | 
     lines = []
     for (tx, acct, fam, term, box), ds in groups.items():
         qty = sum((d.lot.qty for d in ds), D0)
-        acqs = {_mdy(d.lot.acq) for d in ds}
+        acqs = {"INHERITED" if d.lot.inherited else _mdy(d.lot.acq) for d in ds}  # Form 8949 col (b) instructions
         sym = fam.split("@")[0].upper()
         lines.append(Line(box, term, f"{_qty(qty)} {sym}", acqs.pop() if len(acqs) == 1 else "VARIOUS",
                           _mdy(ds[0].ts), sum((d.proceeds for d in ds), D0), sum((d.lot.cost for d in ds), D0),

@@ -244,11 +244,16 @@ class Lot:
     acq: int
     origin: str  # what created it
     flag: str = ""
+    gift_fmv: Decimal | None = None  # a gift with the donor's basis: FMV when received (the loss basis if lower)
+    inherited: bool = False  # inherited property (or a gift of it): always long-term, "INHERITED" on Form 8949
 
     def split(self, q: Decimal) -> Lot:
         """Cut q off this lot (q < qty) and return it."""
-        part = replace(self, qty=q, cost=self.cost * q / self.qty)
+        part = replace(self, qty=q, cost=self.cost * q / self.qty,
+                       gift_fmv=None if self.gift_fmv is None else self.gift_fmv * q / self.qty)
         self.cost -= part.cost
+        if self.gift_fmv is not None and part.gift_fmv is not None:
+            self.gift_fmv -= part.gift_fmv
         self.qty -= q
         return part
 
@@ -333,7 +338,7 @@ class Disposal:
 
     @property
     def term(self) -> str:
-        return "long" if _long_term(self.lot.acq, self.ts) else "short"
+        return "long" if self.lot.inherited or _long_term(self.lot.acq, self.ts) else "short"
 
 
 @dataclass(slots=True)
@@ -382,7 +387,7 @@ class Engine:
     switches to the allocated per-wallet ledger at 2025-01-01."""
 
     def __init__(self, boundary: int = BOUNDARY, pre: str = "hifo", post: str = "hifo",
-                 closures: dict[str, Any] | None = None) -> None:
+                 closures: dict[str, Any] | None = None, gifts: list[dict[str, Any]] | None = None) -> None:
         """pre: lot method of the universal pool through 2024 (as filed); post: per-wallet method from 2025.
         Before the boundary the per-wallet ledger only traces which units physically moved (oldest first).
         closures: account -> date the exchange closed it, or {date, treatment} (tax_profile.yaml closed_accounts).
@@ -394,6 +399,14 @@ class Engine:
             date, treatment = (v.get("date"), v.get("treatment", "")) if isinstance(v, dict) else (v, "")
             self.closures[a] = (int(datetime.fromisoformat(str(date)).replace(tzinfo=UTC).timestamp()),
                                 str(treatment).replace("-", "_") == "capital_loss")
+        # gifts with a known history (tax_profile.yaml gifts_received): tx -> (donor basis per unit, the date the
+        # holding period starts, inherited). Inherited: basis = FMV at the date of death, always long-term.
+        self.gifts: dict[str, tuple[Decimal, int, bool]] = {}
+        for g in gifts or []:
+            day = g.get("inherited") or g.get("acquired")
+            start = int(datetime.fromisoformat(str(day)).replace(tzinfo=UTC).timestamp())
+            for tx in g.get("txs") or []:
+                self.gifts[str(tx)] = (Decimal(str(g["basis_per_unit"])), start, bool(g.get("inherited")))
         self.pre, self.post = pre, post
         self.universal = Pools(pre)  # key ("*", fam)
         self.wallets = Pools("fifo")  # traced before the boundary, authoritative after
@@ -407,8 +420,9 @@ class Engine:
             self._allocate()
             self.switched = True
 
-    def acquire(self, ts: int, acct: str, fam: str, qty: Decimal, cost: Decimal, origin: str, flag: str = "") -> None:
-        lot = Lot(next(self.ids), qty, cost, ts, origin, flag)
+    def acquire(self, ts: int, acct: str, fam: str, qty: Decimal, cost: Decimal, origin: str, flag: str = "",
+                gift_fmv: Decimal | None = None, inherited: bool = False) -> None:
+        lot = Lot(next(self.ids), qty, cost, ts, origin, flag, gift_fmv, inherited)
         self.wallets.add((acct, fam), lot)
         if not self.switched:
             self.universal.add(("*", fam), replace(lot))
@@ -424,6 +438,10 @@ class Engine:
             lots, method = self.universal.take(("*", fam), qty, ts, event), f"universal_{self.pre}"
         for lot in lots:
             share = proceeds * lot.qty / qty
+            if lot.gift_fmv is not None and lot.gift_fmv < lot.cost and not gift:
+                # gift worth less than the donor's basis when received (IRC 1015(a)): the donor's basis for a gain,
+                # the FMV at the gift for a loss, and no gain or loss for a sale in between
+                lot.cost = lot.cost if share >= lot.cost else lot.gift_fmv if share <= lot.gift_fmv else share
             d = Disposal(ts, acct, fam, lot, share, event, tx, method)
             (self.res.gifts if gift else self.res.disposals).append(d)
 
@@ -631,6 +649,19 @@ class Engine:
                 self.acquire(lg.ts, lg.acct, lg.fam, lg.amount, lg.usd or D0, f"{lg.st} {lg.tx[:16]}")
                 self.res.income.append(Income(lg.ts, lg.acct, lg.fam, lg.amount, lg.usd or D0,
                                               "unsolicited_dust" if lg.st.startswith("spam") else lg.st, lg.tx))
+            elif k == "acquire" and lg.st == "gift_received" and lg.tx in self.gifts:
+                per, start, inherited = self.gifts[lg.tx]
+                fmv = lg.usd or D0
+                self.acquire(start, lg.acct, lg.fam, lg.amount, lg.amount * per, f"{lg.st} {lg.tx[:16]}", lg.st,
+                             gift_fmv=fmv, inherited=inherited)
+                what = (f"gift of inherited property: basis ${per:,.2f}/unit (FMV at the date of death "
+                        f"{datetime.fromtimestamp(start, UTC):%Y-%m-%d}), always long-term" if inherited else
+                        f"gift: donor's basis ${per:,.2f}/unit, holding period from "
+                        f"{datetime.fromtimestamp(start, UTC):%Y-%m-%d}")
+                if fmv < lg.amount * per:
+                    what += (f"; worth ${fmv:,.2f} when received, below that basis, so a sale between the two gives "
+                             "no gain or loss and a loss uses the lower value (tax_profile.yaml gifts_received)")
+                self.res.flags.append(Flag(lg.ts, lg.acct, lg.fam, lg.amount, lg.usd, what, lg.tx))
             elif k == "acquire":
                 self.acquire(lg.ts, lg.acct, lg.fam, lg.amount, lg.usd or D0, f"{lg.st} {lg.tx[:16]}",
                              "" if lg.st in ("exchanger_swap_in", "purchased_item") else lg.st)

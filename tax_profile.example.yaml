@@ -11,3 +11,11 @@ closed_accounts:              # exchange accounts you no longer have (date close
   # report it as disposed of for $0 instead (confirm with your tax preparer).
   # SomeExchange: "2025-08-01"
   # OtherExchange: {date: "2025-08-01", treatment: capital_loss}
+# Gifts whose history you know: the donor's basis replaces the value on arrival (otherwise FMV is used and
+# flagged). Inherited by the donor: basis = FMV on the date of death, always long-term ("INHERITED" on Form 8949).
+# A regular gift: `acquired: <donor's date>` instead of `inherited`. If the gift was worth less than that basis
+# when you received it, a loss uses the lower value and a sale in between gives no gain or loss (IRC 1015).
+gifts_received:
+  - txs: ["<tx hash of the gift receipt>"]
+    inherited: 2024-03-15
+    basis_per_unit: 65000

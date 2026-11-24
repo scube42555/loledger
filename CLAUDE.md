@@ -170,6 +170,9 @@ After classification:
   2025-01-01, HIFO per wallet/account after a Rev. Proc. 2024-28 allocation of unused basis that traces each
   unit to the wallet that held it.
 - **Network fees** paid in crypto, including on self-transfers, are small taxable disposals at FMV.
+- **Gifts received** use FMV on arrival unless `tax_profile.yaml` `gifts_received` gives the donor's basis
+  (inherited by the donor: FMV at death, always long-term, "INHERITED" in 8949 col (b)). When the gift was worth
+  less than that basis, sales follow IRC 1015's dual-basis rule (`Engine.dispose`).
 - **Not taxable:** bridges, wraps (ETH↔WETH) and transfers between own wallets. DEX limit orders are
   placement → fill, not withdraw/deposit.
 - **ETH validator income** is booked at each withdrawal sweep, with no daily accrual. Solana and Cardano

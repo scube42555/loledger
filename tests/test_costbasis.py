@@ -130,3 +130,34 @@ def test_closed_account_as_capital_loss_when_chosen() -> None:
     closed = [d for d in res.disposals if d.event == "account_closed"]
     assert [(d.acct, d.lot.qty, d.proceeds, d.lot.cost) for d in closed] == [("MEXC", D(60), D(0), D(60))]
     assert res.written_off == [] and not res.holdings.get(("MEXC", "btc"))
+
+
+def test_gift_of_inherited_property_uses_fmv_at_death_and_the_dual_basis_rule() -> None:
+    """Inherited 2024-03-15 (FMV $100k), then gifted when worth $60k/unit. Basis $100k for a gain, $60k for a
+    loss, no gain or loss in between; always long-term (even sold days after the gift); 8949 says INHERITED."""
+    gift = [{"txs": ["g1"], "inherited": "2024-03-15", "basis_per_unit": "100000"}]
+    legs = ([leg("2026-06-13", "W", "btc", "1", "60000", "OTHER", "gift_received", tx="g1")]
+            + sell("2026-06-15", "W", "0.25", "16000")   # $64k/unit: between -> no gain or loss
+            + sell("2026-07-01", "W", "0.25", "27500")   # $110k/unit: gain over the $100k basis
+            + sell("2026-08-01", "W", "0.25", "12500"))  # $50k/unit: loss under the $60k gift value
+    res = Engine(gifts=gift).run(legs)
+    mid, up, down = sorted(res.disposals, key=lambda d: d.ts)
+    assert (mid.lot.cost, mid.gain) == (D(16000), D(0))
+    assert (up.lot.cost, up.gain) == (D(25000), D(2500))
+    assert (down.lot.cost, down.gain) == (D(15000), D(-2500))
+    assert {d.term for d in (mid, up, down)} == {"long"}
+    held = [lot for lots in res.holdings.values() for lot in lots if lot.qty > 0 and lot.origin.startswith("gift")]
+    assert held[0].qty == D("0.25") and held[0].cost == D(25000) and held[0].gift_fmv == D(15000)
+    assert any("inherited" in f.what for f in res.flags)
+
+    from loledger.taxforms import Profile, build_year
+
+    (ln,) = [x for x in build_year(res, 2026, Profile()).lines if x.sold == "06/15/2026"]
+    assert ln.acquired == "INHERITED" and ln.term == "long"
+
+
+def test_gift_with_unknown_history_still_uses_fmv() -> None:
+    legs = [leg("2026-06-13", "W", "btc", "1", "60000", "OTHER", "gift_received", tx="g2")] + sell(
+        "2026-06-15", "W", "1", "64000")
+    (d,) = Engine(gifts=[{"txs": ["other"], "inherited": "2024-03-15", "basis_per_unit": "1"}]).run(legs).disposals
+    assert (d.lot.cost, d.term) == (D(60000), "short")
