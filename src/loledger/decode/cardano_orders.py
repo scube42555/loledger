@@ -175,14 +175,22 @@ def classify_reward_account(stake: str, moves: list[Movement], txs: dict[str, Tx
     return out
 
 
+AWAITING_SYNC = "awaiting_sync"
+
+
 def classify_cardano_wallet(wallet: str, moves: list[Movement], txs: dict[str, TxContext], ctx: RuleContext,
-                            state: CardanoState) -> list[Classified]:
+                            state: CardanoState, synced_through: int | None = None) -> list[Classified]:
+    """synced_through: the newest block of this wallet's own fetched history. A tx it signed after that was
+    stored by another wallet's sync, so this wallet's legs in it aren't known yet: its row says so."""
     groups: dict[str, list[Movement]] = defaultdict(list)
     for m in moves:
         groups[m.tx_hash].append(m)
+    stand_in: set[str] = set()
     for h, t in txs.items():
         if t.tx_from == wallet and h not in groups:
             groups[h] = []
+            if synced_through is not None and t.block > synced_through:
+                stand_in.add(h)
     symbols = {m.asset_id: m.symbol for m in moves}
     state.assets.update({m.asset_id: (m.symbol, m.decimals) for m in moves})
     rows: list[Classified] = []
@@ -190,7 +198,13 @@ def classify_cardano_wallet(wallet: str, moves: list[Movement], txs: dict[str, T
         h = t.tx_hash
         spends_ours = any(r in state.orders and state.orders[r].wallet == wallet for r in t.meta.get("inputs", []))
         if h in groups or spends_ours:
-            rows.extend(_classify_tx(wallet, t, groups.get(h, []), ctx, state, symbols))
+            got = _classify_tx(wallet, t, groups.get(h, []), ctx, state, symbols)
+            if h in stand_in:
+                for r in got:
+                    r.subtype = AWAITING_SYNC
+                    r.reason = ("signed by this wallet, but only seen through another wallet's sync: what it sent "
+                                "isn't recorded yet (only the network fee). Re-sync this wallet.")
+            rows.extend(got)
     return rows
 
 

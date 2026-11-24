@@ -11,12 +11,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
 
 from .. import form1099da, taxestimate
+from ..config import display_address
 from ..taxforms import EXPORTS, box_summary
 from . import accounts as acc
+from . import transactions as txn
 from .data import CATEGORIES, PARKED, AppData, account_label
 
 TAX_YEAR_COOKIE = "tax_year"  # last tax report viewed: the "Tax reports" menu opens it
@@ -58,8 +61,8 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
     data = AppData(root, pre, post)
-    syncer = acc.Syncer(root, data.refresh)
-    app.jinja_env.filters.update(money=money, qty=qty, price=price)
+    syncer = acc.Syncer(root, data.refresh, data.settings, lambda: data.profile.closed_accounts)
+    app.jinja_env.filters.update(money=money, qty=qty, price=price, addr=display_address)
 
     @app.context_processor
     def common() -> dict[str, Any]:
@@ -130,7 +133,13 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
                                           key=lambda e: (-(e["v"]["mv"] if e["v"] else 0), e["name"]))  # largest first
         chain_mv = {c: sum((r["v"]["mv"] for r in rs if r["v"]), Decimal(0)) for c, rs in groups.items()}
         order = sorted(groups, key=lambda c: (-chain_mv[c], c))
+        names: dict[str, str] = {}  # an address listed on several chains: all its rows
+        for w in wallets:
+            n = f"{w.label} ({w.chain})" if w.label else f"{w.chain} {display_address(w.address)}"
+            names[w.address] = f"{names[w.address]} · {n}" if w.address in names else n
+        unpaired = [(names.get(k, k), v) for k, v in data.unpaired().items()]
         return render_template("accounts.html", groups=[(c, groups[c], chain_mv[c]) for c in order], exchanges=ex,
+                               unpaired=unpaired, can_sync=any(g.sync for _, gaps in unpaired for g in gaps),
                                chains=acc.chain_choices(data.settings), job=syncer.job, error=error,
                                form=form or {}, n_wallets=len(wallets), total=sum(chain_mv.values(), Decimal(0))
                                + sum((e["v"]["mv"] for e in ex if e["v"]), Decimal(0)))
@@ -155,6 +164,11 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         try:
             if request.form.get("all"):
                 syncer.sync_all()
+            elif request.form.get("unpaired"):
+                names = [k for k, gaps in data.unpaired().items() if any(g.sync for g in gaps)]
+                if not names:
+                    abort(400, "no transfers are missing their other side")
+                syncer.sync_accounts(names, f"Sync {len(names)} account(s) missing a side of a transfer")
             elif request.form.get("exchange"):
                 if request.form["exchange"] not in exchanges():
                     abort(400, "unknown exchange")
@@ -174,7 +188,18 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
 
     @app.get("/accounts/sync/status")
     def sync_status() -> Response:
-        return jsonify(syncer.job.status() if syncer.job else None)
+        return jsonify(syncer.job.status(request.args.get("since", 0, type=int)) if syncer.job else None)
+
+    @app.get("/accounts/sync/log")
+    def sync_log() -> Response:
+        """The whole log of the current (or, after a restart, the last) sync, as plain text."""
+        if syncer.job:
+            text = f"{syncer.job.title}\n" + "\n".join(syncer.job.log) + "\n"
+        elif (root / acc.LAST_LOG).exists():
+            text = (root / acc.LAST_LOG).read_text()
+        else:
+            abort(404, "no sync has run yet")
+        return Response(text, mimetype="text/plain")
 
     # -- tax reports --------------------------------------------------------------------------------
     @app.get("/tax")
@@ -242,6 +267,33 @@ def create_app(root: Path, pre: str = "hifo", post: str = "hifo") -> Flask:
         taxestimate.save_input(year, "qualified_dividends", qdiv)
         taxestimate.save_input(year, "other_income", other)
         return redirect(url_for("tax", year=year) + "#estimate")
+
+    # -- transactions -----------------------------------------------------------------------------
+    @app.get("/transactions")
+    def transactions() -> str:
+        txs = data.transactions()
+        f = txn.Filters.parse(request.args)
+        hits = f.apply(txs)
+        pages = max(1, -(-len(hits) // txn.PAGE))
+        page = min(max(request.args.get("page", 1, type=int) or 1, 1), pages)
+        accts = sorted({(t.acct, t.label) for t in txs}, key=lambda a: a[1].lower())
+        assets = [(a, a) for a in sorted({lg.token for t in txs if t.kind != "Spam" for lg in t.legs}, key=str.lower)]
+        def qs(**over: Any) -> str:
+            """This page's query string (every value of a multi-select kept) with some keys replaced; no page."""
+            pairs = [(k, v) for k, v in request.args.items(multi=True) if k != "page" and v and k not in over]
+            return urlencode(pairs + [(k, v) for k, v in over.items() if v is not None])
+
+        return render_template("transactions.html", txs=hits[(page - 1) * txn.PAGE:page * txn.PAGE], total=len(hits),
+                               all=len(txs), page=page, pages=pages, f=f, qs=qs, accounts=accts, assets=assets,
+                               chains=[(c, c) for c in sorted({t.chain for t in txs})], kinds=[(k, k) for k in txn.KINDS],
+                               value=sum((t.value for t in hits), Decimal(0)),
+                               fees=sum((t.fee_usd or 0 for t in hits), Decimal(0)))
+
+    @app.get("/transactions.csv")
+    def transactions_csv() -> Response:
+        hits = txn.Filters.parse(request.args).apply(data.transactions())
+        return Response(txn.to_csv(hits), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=transactions.csv"})
 
     @app.post("/refresh")
     def refresh() -> Any:

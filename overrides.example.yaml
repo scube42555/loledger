@@ -7,7 +7,7 @@
   tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000001"
   direction: out
   classification: OTHER
-  subtype: payment
+  subtype: card_topup  # a disposal like `payment` (a purchase); shows as "Card top-up" on the Transactions page
   reason: "card top-up for a purchase"
 - chain: Bitcoin
   counterparty: bc1qexamplegiversaddressxxxxxxxxxxxxxxxxxx

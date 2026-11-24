@@ -57,6 +57,31 @@ def _money(d: Decimal) -> str:
     return f"({-d:,.2f})" if d < 0 else f"{d:,.2f}"
 
 
+def _dollars(d: Decimal) -> str:
+    """Whole dollars, IRS style: under 50 cents drops, 50-99 cents rounds up. A line that adds amounts is added in
+    cents and only its total rounded (Form 1040 instructions), so callers pass the cents total."""
+    q = _cents(d).quantize(Decimal(1), ROUND_HALF_UP)
+    return "0" if q == 0 else f"({-q:,})" if q < 0 else f"{q:,}"
+
+
+ESCROW_VENUE = {"cardano": "Cardano DEX order", "deeptrade": "Sui DEX order (DeepTrade)",
+                "deepbook": "Sui DEX order (DeepBook)"}
+
+
+def statement_account(acct: str) -> str:
+    """Where a sale happened, readably: "Gemini", "Solana wallet 7xKXtg…sgAs", "Cardano DEX order"."""
+    from .config import display_address
+
+    if acct.startswith("escrow:"):
+        venue = acct.split(":")[1]
+        return ESCROW_VENUE.get(venue, f"{venue.title()} order")
+    if "|" in acct:
+        chain, addr = acct.split("|", 1)
+        a = display_address(addr.split("#")[0])
+        return f"{chain} wallet {a[:6]}…{a[-4:]}" if len(a) > 12 else f"{chain} wallet {a}"
+    return acct
+
+
 def _mdy(ts: int) -> str:
     return datetime.fromtimestamp(ts, UTC).strftime("%m/%d/%Y")
 
@@ -145,6 +170,7 @@ class TaxYear:
     disposals: list[Disposal] = field(default_factory=list)
     prices: dict[str, Decimal] = field(default_factory=dict)  # Dec 31 USD price per asset family
     da_adjusted: tuple[int, Decimal] = (0, D0)  # lines given 1099-DA proceeds, net change in proceeds
+    da_moved: int = 0  # broker lines the 1099-DA doesn't list, put in Box I/L
     written_off: dict[str, Decimal] = field(default_factory=dict)  # closed account -> basis left there, no deduction
 
     @property
@@ -226,15 +252,16 @@ def build_year(res: Result, year: int, profile: Profile, classified: Path | None
     ty: TaxYear | None = None
     for y in range(first, year + 1):
         carry = profile.carryover.get(y, carry)
-        from .form1099da import apply_reported_proceeds, broker_accounts
+        from .form1099da import apply_reported_proceeds, broker_accounts, move_unreported
 
         lines = build_lines(res, y, profile, broker_accounts(y))
+        moved = move_unreported(y, lines)
         adj = apply_reported_proceeds(y, lines) if profile.proceeds == "1099da" else (0, D0)
         inc: dict[str, Decimal] = defaultdict(Decimal)
         rows = [x for x in res.income if _year(x.ts) == y]
         for x in rows:
             inc[x.typ] += x.usd
-        ty = TaxYear(y, lines, dict(inc), rows, carry, profile, da_adjusted=adj)
+        ty = TaxYear(y, lines, dict(inc), rows, carry, profile, da_adjusted=adj, da_moved=moved)
         _schedule_d(ty)
         carry = carryover_out(ty.sched_d["7"], ty.sched_d["15"], profile.loss_limit)
     assert ty is not None
@@ -318,7 +345,7 @@ def _widgets(page: Any) -> dict[str, tuple[list[float], bool]]:
     return out
 
 
-MONEY = re.compile(r"^\(?-?[\d,]+\.\d\d\)?$")
+MONEY = re.compile(r"^\(?-?\d[\d,]*(\.\d\d)?\)?$")  # cents or whole dollars: right-aligned
 
 
 def _all_fields(reader: Any, page: int) -> dict[str, str]:
@@ -336,6 +363,7 @@ def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]],
     from io import BytesIO
 
     from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ArrayObject, NameObject
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas
 
@@ -373,6 +401,11 @@ def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]],
         page = out.add_page(reader.pages[p])
         if "/Annots" in page:
             del page["/Annots"]
+        contents = page.get("/Contents")
+        if contents is not None and not isinstance(contents.get_object(), ArrayObject):
+            # copies of one template page share a single content stream, and merging writes back into it: every
+            # copy would get every page's values (Form 8949 page 2 for Boxes K and L). An array gets a new stream.
+            page[NameObject("/Contents")] = ArrayObject([contents])
         page.merge_page(overlay.pages[i])
     if keep:
         from .pdfforms import _name, add_fields
@@ -456,12 +489,12 @@ def f8949_pdf(ty: TaxYear, consolidated: bool = False) -> tuple[Any, int]:
             v[name] = state
             for row, ln in zip(L["rows"], chunk):
                 a, b, c, d, e, f, g, h = row[:8]
-                v.update({a: ln.description[:40], b: ln.acquired, c: ln.sold, d: _money(ln.proceeds),
-                          e: _money(ln.basis), h: _money(_cents(ln.proceeds) - _cents(ln.basis))})
-            tp = sum((_cents(x.proceeds) for x in chunk), D0)
+                v.update({a: ln.description[:40], b: ln.acquired, c: ln.sold, d: _dollars(ln.proceeds),
+                          e: _dollars(ln.basis), h: _dollars(_cents(ln.proceeds) - _cents(ln.basis))})
+            tp = sum((_cents(x.proceeds) for x in chunk), D0)  # totals: added in cents, then rounded
             tb = sum((_cents(x.basis) for x in chunk), D0)
             td, te, _tf, _tg, th = L["totals"]
-            v.update({td: _money(tp), te: _money(tb), th: _money(tp - tb)})
+            v.update({td: _dollars(tp), te: _dollars(tb), th: _dollars(tp - tb)})
             pages.append((page, v))
     if not pages:
         return None, used
@@ -491,7 +524,7 @@ def statement_pdf(ty: TaxYear, out: Any) -> None:
         data = [["(a) Description", "Account", "(b) Acquired", "(c) Sold", "(d) Proceeds", "(e) Cost basis",
                  "(h) Gain or (loss)"]]
         for ln in lines:
-            data.append([ln.description[:48], ln.account[:28], ln.acquired, ln.sold, _money(ln.proceeds),
+            data.append([ln.description[:48], statement_account(ln.account)[:30], ln.acquired, ln.sold, _money(ln.proceeds),
                          _money(ln.basis), _money(_cents(ln.proceeds) - _cents(ln.basis))])
         p_ = sum((_cents(x.proceeds) for x in lines), D0)
         b_ = sum((_cents(x.basis) for x in lines), D0)
@@ -519,7 +552,10 @@ def schedule_d_pdf(ty: TaxYear) -> tuple[Any, int]:
     for ln in ("8a", "8b", "9", "10"):
         keys += [f"{ln}d", f"{ln}e", f"{ln}g", f"{ln}h"]
     keys += ["11", "12", "13", "14", "15"]
-    m1 = dict(zip(keys, p1))
+    # by the slot number in the field name (f1_06 / f1_6 = line 1a (h)), not by order: some years' forms leave out
+    # the shaded column (g) fields of lines 1a and 8a (2024), which shifted every later value one box down
+    m1 = {keys[int(mt.group(1)) - 1]: n for n in p1
+          if (mt := re.search(r"f1_(\d+)\[", n)) and 0 < int(mt.group(1)) <= len(keys)}
     m2 = dict(zip(["16", "18", "19", "21"], p2))
     sd = ty.sched_d
     v1: dict[str, str] = {}
@@ -529,10 +565,10 @@ def schedule_d_pdf(ty: TaxYear) -> tuple[Any, int]:
         v1[m1["ssn"]] = ty.profile.ssn
     for k, fld in m1.items():
         if k not in ("name", "ssn") and sd.get(k):  # lines 6 and 14 print their own ( ): enter the amount
-            v1[fld] = _money(-sd[k]) if k in ("6", "14") else _money(sd[k])
-    v2 = {m2["16"]: _money(sd["16"])} if sd.get("16") else {}
+            v1[fld] = _dollars(-sd[k]) if k in ("6", "14") else _dollars(sd[k])
+    v2 = {m2["16"]: _dollars(sd["16"])} if sd.get("16") else {}
     if sd.get("21"):
-        v2[m2["21"]] = _money(-sd["21"])  # printed ( ) on the form
+        v2[m2["21"]] = _dollars(-sd["21"])  # printed ( ) on the form
     return _fill_pages(path, [(0, v1), (1, v2)], {0: _all_fields(r, 0), 1: _all_fields(r, 1)}), used
 
 
@@ -551,7 +587,7 @@ def schedule_1_pdf(ty: TaxYear) -> tuple[Any, int]:
     r = PdfReader(str(path))
     head = [n for n, ft, _ in _fields(r, 0) if ft == "/Tx"][:2]
     m = S1_MAP[min(max(S1_MAP), max(min(S1_MAP), used))]
-    amt = _money(ty.income_total)
+    amt = _dollars(ty.income_total)
     v: dict[str, str] = {}
     if ty.profile.name:
         v[head[0]] = ty.profile.name
@@ -777,6 +813,9 @@ def year_notes(ty: TaxYear) -> list[str]:
     _, used = form_path("f8949", ty.year)
     if used != ty.year:
         notes.append(f"IRS forms for {ty.year} are not published yet: the {used} forms are used until they are.")
+    if ty.da_moved:
+        notes.append(f"Not on Form 1099-DA: {ty.da_moved} sale(s) at a broker that sent a 1099-DA aren't listed on it "
+                     "(e.g. small stablecoin sales brokers may leave out), so they go in Box I/L (not reported to you).")
     n, delta = ty.da_adjusted
     if n:
         notes.append(f"Proceeds from Form 1099-DA: {n} Form 8949 line(s) use the proceeds your broker reported "

@@ -158,7 +158,9 @@ def parse_mexc(folder: Path, tz_hours: float = 0, chain: str = "MEXC", web_tz_ho
         h = f"mexc:withdrawal:{r['txid']}:{r['create_time']}"
         ts = _ts(r["create_time"], fmt, tz_hours)
         asset, net = split_network(r["currency"])
-        meta = {"journal_type": "ONCHAIN_WITHDRAWAL", "txid": txh, "txid_index": idx, "address": r.get("address"),
+        addr = (r.get("address") or "").strip()
+        meta = {"journal_type": "ONCHAIN_WITHDRAWAL", "txid": txh, "txid_index": idx,
+                "address": addr if _plain_address(addr) else None,  # often scrambled here; website rows fill it in
                 "fee": r["fee"], "net_amount": r["actual_amount"], "network": net or None}
         b.leg(spot_w, h, ts, asset, -Decimal(r["actual_amount"]), "onchain_withdrawal", "mexc", meta)
         b.leg(spot_w, h, ts, asset, -Decimal(r["fee"] or 0), "fee", "mexc", meta)
@@ -241,6 +243,12 @@ def _mexc_futures_history(folder: Path, b: _Builder, fut_w: str, fmt: str, tz_ho
                       "before the contract export starts")
 
 
+def _plain_address(a: str) -> bool:
+    """A usable on-chain address, not an encoded/blank placeholder (MEXC's 'export all' scrambles them)."""
+    a = a.strip()
+    return len(a) >= 20 and not any(c in a for c in " /+=")
+
+
 def _mexc_web(folder: Path, b: _Builder, spot_w: str, fmt: str, tz_hours: float, checks: list[str]) -> None:
     """Website downloads (Trade History, Deposit History, Withdrawal History; UTC-4), recognised by header.
     'Export all' is authoritative: website trades are used only before its first spot fill, website
@@ -294,8 +302,17 @@ def _mexc_web(folder: Path, b: _Builder, spot_w: str, fmt: str, tz_hours: float,
               "mexc", {"journal_type": "ONCHAIN_DEPOSIT", "txid": txh, "txid_index": idx, "network": r.get("Network")
                        or None, "source_file": "website"})
         n_d += 1
+    by_txid = {str(t.meta.get("txid") or "").lower(): t for t in b.txs.values()
+               if t.meta.get("journal_type") == "ONCHAIN_WITHDRAWAL"}
     for k, r in wds.items():
         if k in known:
+            # 'export all' encodes the withdrawal address (and often has no network): take them from the website row
+            t = by_txid.get(k)
+            if t is not None:
+                if not _plain_address(str(t.meta.get("address") or "")) and _plain_address(r.get("Withdrawal Address", "")):
+                    t.meta["address"] = r["Withdrawal Address"].strip()
+                if not t.meta.get("network") and r.get("Network"):
+                    t.meta["network"] = r["Network"].strip()
             continue
         txh, idx = _split_txid(r["TxID"])
         h = f"mexc:withdrawal:{r['TxID']}:{r['Time']}"

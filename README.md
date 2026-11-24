@@ -126,6 +126,7 @@ that moved nothing (approvals, cancels, failed txs, delegation).
 | `linked_tx_hash` | the other half of an order / LP / heuristic pair |
 | `order_id`, `order_details` | `kyber:<hash>`, `gelato:<key>`, `cardano:<tx#idx>`; decoded terms, fill price vs limit |
 | `protocol`, `confidence`, `reason` | 1.0 = deterministic; < 1.0 = spam/heuristic; reason says why |
+| `withdrawal_address`, `withdrawal_network` | exchange withdrawals: the destination address and network the exchange reports (network blank when the export doesn't say) |
 | `gas_fee_native`, `gas_fee_usd` | on the first row of each tx the wallet paid for |
 | `tx_from`, `tx_to`, `utxo_ref`, `datum_summary` | raw context (Cardano: UTxO refs and a generic datum summary) |
 
@@ -170,11 +171,23 @@ loledger tax --year 2025             # every export for the year -> tax/ (with a
 loledger serve                       # http://127.0.0.1:8765/ (local only)
 ```
 
-The web app has three pages:
+The web app has four pages:
 - **Portfolio:** holdings at live prices, cost basis and unrealized gain, per asset and per account.
 - **Accounts:** wallets grouped by chain, with value per wallet. You can add a wallet (it is appended to
   `addresses.csv`), re-sync one wallet, or re-sync everything. A sync runs the same `loledger` commands as
-  above and shows their output live.
+  above and shows their output live (every line; "open full log" shows it as text, and the last sync's log is
+  kept in `data/last_sync.log`). When a one-account sync brings in a transfer to or from another of your
+  accounts (a wallet in `addresses.csv`, or an exchange) that doesn't have its side of it yet, that account is
+  synced right after, and so on along the chain until no new account turns up. Each account is synced at
+  most once, so at worst this is a Sync All (gift recipients and closed accounts are skipped).
+  A deposit from an address nobody recognises also syncs the exchanges you have API keys for (it may be one of
+  their withdrawals). A Cardano transaction one wallet signed but another wallet's sync fetched shows as
+  "Needs sync" (only its fee is known) until the signing wallet is synced, which happens automatically.
+  If any transfer in your whole history is missing its other side in one of your known accounts, the page lists
+  them under "Transfers missing their other side" with a button that syncs those accounts. A deposit to an exchange is
+  only recognised before the exchange has it when its deposit address is in `exchange_deposits.yaml`.
+- **Transactions:** every transaction, filterable by account, chain, asset, type, date range, USD value and
+  free text, with each leg's classification on click and a CSV download of the filtered set.
 - **Tax reports:** opens the last year you viewed, or the most recent one. ←/→ (buttons or arrow keys)
   switch years. Each year shows its summary, the Form 8949 summary totals, the downloads (IRS PDFs,
   TaxAct/TurboTax files, summary totals, CSV reports), and its Form 1099-DA section, where you add the

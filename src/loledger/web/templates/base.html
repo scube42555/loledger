@@ -17,6 +17,7 @@
   <nav>
     <a href="{{ url_for('portfolio') }}" class="{{ 'on' if request.endpoint == 'portfolio' }}">Portfolio</a>
     <a href="{{ url_for('accounts') }}" class="{{ 'on' if request.endpoint == 'accounts' }}">Accounts{% if syncing %} <span class="spin" title="Sync running"></span>{% endif %}</a>
+    <a href="{{ url_for('transactions') }}" class="{{ 'on' if request.endpoint == 'transactions' }}">Transactions</a>
     <a href="{{ url_for('tax_latest') }}" class="{{ 'on' if request.endpoint in ('tax', 'da_detail') }}">Tax reports</a>
   </nav>
   <form method="post" action="{{ url_for('refresh') }}" class="refresh">

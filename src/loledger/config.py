@@ -26,6 +26,21 @@ class ConfigError(Exception):
     pass
 
 
+def display_address(a: str) -> str:
+    """How to show an address: EVM ones in EIP-55 checksum case (internally they are lower-cased), others as is."""
+    if len(a) == 42 and a[:2].lower() == "0x" and all(c in "0123456789abcdefABCDEF" for c in a[2:]):
+        from eth_utils.address import to_checksum_address
+
+        return str(to_checksum_address(a))
+    return a
+
+
+def norm_address(a: object) -> str:
+    """EVM (0x…) addresses are compared lower-cased; base58/bech32 ones (Solana, Bitcoin) are case-sensitive."""
+    s = str(a).strip()
+    return s.lower() if s.lower().startswith("0x") else s
+
+
 @dataclass(frozen=True, slots=True)
 class ChainConfig:
     name: str
@@ -112,7 +127,7 @@ def _chain_from_dict(name: str, d: dict[str, Any]) -> ChainConfig:
         export=str(d.get("export", "")),
         parser=str(d.get("parser", "")),
         tz_hours=float(d.get("tz_hours", 0) or 0),
-        deposit_addresses=tuple(str(a).lower() for a in d.get("deposit_addresses") or []),
+        deposit_addresses=tuple(norm_address(a) for a in d.get("deposit_addresses") or []),
         credit_subtype=str(d.get("credit_subtype", "")),
         rpc_batch=int(d.get("rpc_batch", 20)),
         dust_native=str(d.get("dust_native", "0")),
@@ -133,7 +148,7 @@ def load_settings(path: Path | None = None) -> Settings:
 
         for name, addrs in (yaml.safe_load(private.read_text()) or {}).items():
             if name in chains:
-                extra = tuple(str(a).lower() for a in addrs or [])
+                extra = tuple(norm_address(a) for a in addrs or [])
                 chains[name] = replace(chains[name], deposit_addresses=chains[name].deposit_addresses + extra)
     return Settings(db_path=Path(raw.get("db_path", "data/txclass.sqlite")), chains=chains,
                     matching=dict(raw.get("matching") or {}))

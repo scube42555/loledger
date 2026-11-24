@@ -207,7 +207,7 @@ def kind(lg: Leg) -> str:
         return "gift_out"
     if st in ("gift_received", "purchased_item", "exchanger_swap_in"):
         return "acquire"
-    if st in ("payment", "exchanger_swap_out"):
+    if st in ("payment", "card_topup", "exchanger_swap_out"):  # spending crypto: a disposal at FMV
         return "dispose"
     if st in INCOME:
         return "income" if st != "airdrop" or lg.usd else "acquire"

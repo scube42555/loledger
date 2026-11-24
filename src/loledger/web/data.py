@@ -14,7 +14,7 @@ from pathlib import Path
 from collections.abc import Iterable
 from typing import Any
 
-from ..config import load_settings
+from ..config import display_address, load_settings
 from ..costbasis import FIAT, Engine, Leg, Result, load as load_legs
 from ..http import HttpClient
 from ..reconcile import family
@@ -49,6 +49,7 @@ def account_label(acct: str, labels: dict[str, str]) -> str:
         return acct
     chain, addr = acct.split("|", 1)
     lab = labels.get(f"{chain}|{addr}") or labels.get(addr)
+    addr = display_address(addr)
     return f"{lab} ({chain})" if lab else f"{chain} {addr[:6]}…{addr[-4:]}"
 
 
@@ -113,6 +114,8 @@ class AppData:
                 self.profile.proceeds = self.proceeds_choice
             self.loaded = datetime.now(UTC)
             self._years: dict[int, TaxYear] = {}
+            self._txs: list[Any] | None = None
+            self._unpaired: dict[str, list[Any]] | None = None
             self._read_classified(classified)
             self._labels = self._read_labels()
 
@@ -229,6 +232,30 @@ class AppData:
                     usd[f] = p
         self._prices = Prices(usd, chg, spark, time.time())
         return self._prices
+
+    # -- transactions -----------------------------------------------------------------------------
+    def transactions(self) -> list[Any]:
+        """Every known transaction (classified.csv + manual.yaml), newest first; built on first use per load."""
+        from ..costbasis import manual_rows
+        from .transactions import build
+
+        with self.lock:
+            if self._txs is None:
+                with open(self.root / "classified.csv", newline="") as f:
+                    rows = list(csv.DictReader(f)) + manual_rows(self.root / "manual.yaml")
+                natives = {c.name: c.native_symbol for c in self.settings.chains.values()}
+                self._txs = build(rows, lambda a: account_label(a, self._labels), natives)
+            return self._txs
+
+    def unpaired(self) -> dict[str, list[Any]]:
+        """Known accounts missing their side of a transfer anywhere in the history (see accounts.unpaired)."""
+        from .accounts import read_wallets, unpaired
+
+        with self.lock:
+            if self._unpaired is None:
+                self._unpaired = unpaired(self.root / "classified.csv", self.settings,
+                                          read_wallets(self.root, self.settings), self.profile.closed_accounts)
+            return self._unpaired
 
     # -- portfolio --------------------------------------------------------------------------------
     def accounts(self) -> list[tuple[str, str]]:

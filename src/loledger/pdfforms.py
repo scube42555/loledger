@@ -217,6 +217,8 @@ def add_fields(w: PdfWriter, groups: Mapping[str, Sequence[Widget]], page_map: M
             parent = DictionaryObject({NameObject("/T"): TextStringObject(name), NameObject("/Kids"): ArrayObject()})
             for k, v in (attrs[2] if attrs else {}).items():
                 parent[NameObject(k)] = v.clone(w) if hasattr(v, "clone") else v
+            if parent.get("/FT") == "/Btn" and "/V" not in parent:  # an empty checkbox is /Off: without a name
+                parent[NameObject("/V")] = NameObject("/Off")  # value qpdf can't draw (or flatten) it
             pref = w._add_object(parent)
         for wi, a in kids:
             page: Any = w.pages[wi]

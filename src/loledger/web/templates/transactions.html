@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+{% block body %}
+{% macro multi(name, label, options, selected, all_text, find=False) %}
+  <div class="field"><span>{{ label }}</span>
+    <details class="ms">
+      <summary class="input" data-all="{{ all_text }}">{{ all_text }}</summary>
+      <div class="ms-pop">
+        {% if find %}<input class="input ms-find" type="search" placeholder="Find…" autocomplete="off">{% endif %}
+        <div class="ms-opts">
+        {% for value, text in options %}<label><input type="checkbox" name="{{ name }}" value="{{ value }}" {{ 'checked' if value in selected }}> <span>{{ text }}</span></label>{% endfor %}
+        </div>
+        <div class="ms-foot"><button type="button" class="btn ghost small ms-none">Clear</button>
+          <button class="btn primary small">Apply</button></div>
+      </div>
+    </details></div>
+{% endmacro %}
+{% macro amt(lg) %}<span class="{{ 'pos' if lg.amount > 0 else 'neg' }}">{{ '+' if lg.amount > 0 else '−' }}{{ lg.amount|abs|qty }}</span> {{ lg.token }}{% endmacro %}
+<div class="head-row">
+  <h1>Transactions</h1>
+  <span class="muted">{{ '{:,}'.format(total) }}{% if total != all %} of {{ '{:,}'.format(all) }}{% endif %} transactions
+    · {{ value|money(cents=False) }} moved · {{ fees|money }} in fees</span>
+  <a class="btn right" href="{{ url_for('transactions_csv') }}?{{ qs() }}" title="These transactions, one row per leg">⤓ Download CSV</a>
+</div>
+
+<form class="card filters" method="get" action="{{ url_for('transactions') }}">
+{{ multi('account', 'Account', accounts, f.accounts, 'All accounts', find=True) }}
+{{ multi('chain', 'Chain / exchange', chains, f.chains, 'All') }}
+{{ multi('asset', 'Asset', assets, f.assets, 'All assets', find=True) }}
+{{ multi('kind', 'Type', kinds, f.kinds, 'All (no spam)') }}
+  <label>From <input class="input" type="date" name="start" value="{{ f.start or '' }}"></label>
+  <label>To <input class="input" type="date" name="end" value="{{ f.end or '' }}"></label>
+  <label>Value (USD)
+    <span class="range"><input class="input" name="min" inputmode="decimal" placeholder="min" size="6" value="{{ f.min if f.min is not none else '' }}">–<input class="input" name="max" inputmode="decimal" placeholder="max" size="6" value="{{ f.max if f.max is not none else '' }}"></span></label>
+  <label>Search <input class="input" name="q" value="{{ f.q }}" placeholder="tx hash, address, note" size="16"></label>
+  <label>Sort
+    <select class="input" name="sort">
+      <option value="new" {{ 'selected' if f.sort == 'new' }}>Newest first</option>
+      <option value="old" {{ 'selected' if f.sort == 'old' }}>Oldest first</option>
+      <option value="value" {{ 'selected' if f.sort == 'value' }}>Largest value</option>
+    </select></label>
+  <label class="row"><input type="checkbox" name="spam" value="1" {{ 'checked' if f.spam }}> Include spam</label>
+  <div class="actions">
+    <button class="btn primary">Apply</button>
+    {% if f.active() %}<a class="btn ghost" href="{{ url_for('transactions') }}">Clear</a>{% endif %}
+  </div>
+</form>
+
+<div class="card">
+  {% if not txs %}<p class="muted">No transactions match these filters.</p>{% else %}
+  <table class="t compact txs">
+    <thead><tr><th>Date (UTC)</th><th>Account</th><th>Type</th><th>Movement</th><th class="r">Value</th>
+      <th class="r">Fees</th><th>Tx</th></tr></thead>
+    {% for t in txs %}{% set id = loop.index %}
+    <tbody>
+      <tr class="asset" onclick="toggleDetail('{{ id }}')" title="Show every leg">
+        <td class="nowrap"><span class="caret" id="c-{{ id }}">▸</span>{{ t.when.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="acct"><a href="{{ url_for('transactions') }}?{{ qs(account=t.acct) }}" onclick="event.stopPropagation()" title="{{ t.label }} — show only this account">{{ t.label }}</a></td>
+        <td><span class="chip kind" data-k="{{ t.kind }}" title="{{ t.sub }}">{{ t.kind }}</span></td>
+        <td>{% for lg in t.summary[:3] %}<div>{{ amt(lg) }}</div>{% endfor %}
+          {% if t.summary|length > 3 %}<div class="muted small">+ {{ t.summary|length - 3 }} more</div>{% endif %}
+          {% if not t.summary %}<span class="muted">—</span>{% endif %}</td>
+        <td class="r">{{ t.value|money if t.value else '—' }}</td>
+        <td class="r">{{ t.fee_usd|money if t.fee_usd else '—' }}</td>
+        <td><code class="addr" title="{{ t.tx }}">{{ t.tx[:12] }}{{ '…' if t.tx|length > 12 }}</code>
+          <button class="copy" type="button" data-addr="{{ t.tx }}" onclick="event.stopPropagation(); copyAddr(this)" title="Copy">⧉</button></td>
+      </tr>
+      <tr class="holders" id="d-{{ id }}" hidden><td colspan="7">
+        <table class="t compact inner">
+          <thead><tr><th>Leg</th><th>Amount</th><th class="r">USD</th><th>Classification</th><th>Counterparty</th><th>Why</th></tr></thead>
+          <tbody>
+          {% for lg in t.legs %}
+            <tr><td>{{ lg.role or '—' }}</td><td class="nowrap">{{ amt(lg) }}</td>
+              <td class="r">{{ lg.usd|abs|money if lg.usd is not none else '—' }}</td>
+              <td>{{ lg.cls }}{% if lg.sub %} <span class="muted">· {{ lg.sub }}</span>{% endif %}
+                {% if lg.confidence and lg.confidence not in ('1.0', '1.00', '1') %}<span class="chip warn" title="Heuristic match">conf {{ lg.confidence }}</span>{% endif %}</td>
+              {% set cp = lg.counterparty|addr %}<td><code class="addr" title="{{ cp }}">{{ cp[:14] }}{{ '…' if cp|length > 14 }}</code></td>
+              <td class="small">{{ lg.reason }}{% if lg.linked %}<div class="muted">linked: <code class="addr">{{ lg.linked }}</code></div>{% endif %}</td></tr>
+          {% else %}<tr><td colspan="6" class="muted">No token movement (fee only).</td></tr>{% endfor %}
+          </tbody>
+        </table>
+        <p class="muted small">{{ t.chain }} · <code class="addr">{{ t.tx }}</code>
+          {% if t.gas_native %} · gas {{ t.gas_native|qty }} {{ t.gas_symbol }}{% if t.gas_usd %} ({{ t.gas_usd|money }}){% endif %}{% endif %}</p>
+      </td></tr>
+    </tbody>
+    {% endfor %}
+  </table>
+  {% if pages > 1 %}
+  <div class="pager">
+    <a class="btn {{ 'disabled' if page == 1 }}" href="{{ url_for('transactions') }}?{{ qs(page=page - 1) }}">← Previous</a>
+    <span class="muted">Page {{ page }} of {{ pages }}</span>
+    <a class="btn {{ 'disabled' if page == pages }}" href="{{ url_for('transactions') }}?{{ qs(page=page + 1) }}">Next →</a>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {  // checkbox dropdowns: click ticks/unticks (several allowed); the box shows what's picked
+  const boxes = [...document.querySelectorAll('details.ms')];
+  const label = d => {
+    const s = d.querySelector('summary'), on = [...d.querySelectorAll('.ms-opts input:checked')];
+    s.textContent = !on.length ? s.dataset.all : on.length <= 2
+      ? on.map(i => i.nextElementSibling.textContent.trim()).join(', ') : `${on.length} selected`;
+    s.title = on.map(i => i.nextElementSibling.textContent.trim()).join('\n');
+  };
+  boxes.forEach(d => {
+    label(d);
+    d.addEventListener('change', () => label(d));
+    d.addEventListener('toggle', () => { if (d.open) { boxes.forEach(o => { if (o !== d) o.open = false; });
+      const f = d.querySelector('.ms-find'); if (f) f.focus(); } });
+    d.querySelector('.ms-none').onclick = () => { d.querySelectorAll('.ms-opts input').forEach(i => i.checked = false); label(d); };
+    const find = d.querySelector('.ms-find');
+    if (find) find.oninput = () => { const q = find.value.toLowerCase();
+      d.querySelectorAll('.ms-opts label').forEach(l => l.hidden = !!q && !l.textContent.toLowerCase().includes(q)); };
+  });
+  document.addEventListener('click', e => boxes.forEach(d => { if (d.open && !d.contains(e.target)) d.open = false; }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') boxes.forEach(d => d.open = false); });
+})();
+function toggleDetail(id) {
+  const row = document.getElementById('d-' + id), open = row.hidden;
+  row.hidden = !open;
+  document.getElementById('c-' + id).textContent = open ? '▾' : '▸';
+}
+function copyAddr(btn) {
+  clearTimeout(btn._t);
+  navigator.clipboard.writeText(btn.dataset.addr).then(() => { btn.textContent = '✓'; }, () => { btn.textContent = '✗'; })
+    .finally(() => { btn._t = setTimeout(() => { btn.textContent = '⧉'; }, 2000); });
+}
+</script>
+{% endblock %}

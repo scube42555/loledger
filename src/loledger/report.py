@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from .model import AssetKind
 from .positions import Position
 from .rules import Classified, Cls
 
@@ -17,6 +18,8 @@ COLUMNS = [
     "token", "token_address", "amount", "counterparty", "usd_value_at_time", "classification", "subtype",
     "leg_role", "linked_tx_hash", "protocol", "confidence", "reason", "gas_fee_native", "gas_fee_usd",
     "tx_from", "tx_to", "utxo_ref", "datum_summary", "order_id", "order_details", "usd_price", "price_source",
+    "withdrawal_address",  # exchange withdrawals: the destination address the exchange reports
+    "withdrawal_network",  # ... and the network it names ("" when the export doesn't say)
 ]
 
 
@@ -45,6 +48,8 @@ def write_csv(path: Path, rows: Iterable[Classified], labels: dict[str, str]) ->
                 "" if r.gas_fee_native is None else f"{r.gas_fee_native:f}", _usd(r.gas_fee_usd),
                 t.tx_from, t.tx_to, m.utxo_ref, r.datum_summary, r.order_id, r.order_details,
                 "" if r.usd_price is None else f"{r.usd_price:.10g}", r.price_source,
+                str(t.meta.get("address") or "") if m.asset_kind == AssetKind.EXCHANGE and m.amount < 0 else "",
+                str(t.meta.get("network") or "") if m.asset_kind == AssetKind.EXCHANGE and m.amount < 0 else "",
             ])
             n += 1
     return n

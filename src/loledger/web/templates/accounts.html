@@ -67,9 +67,30 @@
     <span class="muted small" id="sync-state"></span>
     <button class="x" type="button" id="sync-close" title="Close (a running sync continues)">×</button>
   </div>
-  <details id="sync-details" open><summary class="muted small">Show log</summary>
+  <details id="sync-details" open><summary class="muted small">Show log
+      <a class="small" href="{{ url_for('sync_log') }}" target="_blank" onclick="event.stopPropagation()">open full log</a></summary>
     <pre class="pre log" id="sync-log"></pre></details>
 </section>
+
+{% if unpaired %}
+<section class="card unpaired">
+  <div class="chain-head"><span class="sym">⇆</span><h2>Transfers missing their other side</h2>
+    <span class="muted small">{{ unpaired|length }} known account{{ 's are' if unpaired|length != 1 else ' is' }} missing {{ 'their' if unpaired|length != 1 else 'its' }} side of a transfer</span>
+    <form method="post" action="{{ url_for('account_sync') }}" class="right {{ 'hide' if not can_sync }}">
+      <input type="hidden" name="unpaired" value="1">
+      <button class="btn primary" {{ 'disabled' if job and job.running }} title="Sync these accounts, then follow their new transfers">↻ Sync these accounts</button>
+    </form></div>
+  <ul class="unpaired-list">
+  {% for name, lines in unpaired %}
+    <li><b>{{ name }}</b> <span class="muted small">· {{ lines|length }} transfer{{ 's' if lines|length != 1 }}</span>
+      <ul class="small">{% for g in lines[:5] %}<li>{{ g.text }}{% if not g.sync %} <span class="chip warn">sync won't help</span>{% endif %}</li>{% endfor %}
+        {% if lines|length > 5 %}<li class="muted">+ {{ lines|length - 5 }} more</li>{% endif %}</ul></li>
+  {% endfor %}
+  </ul>
+  <p class="muted small">If one stays listed after a sync, its other side wasn't found in that account's history
+    (e.g. a token or network the adapter doesn't read): check it on the Transactions page.</p>
+</section>
+{% endif %}
 
 {% if exchanges %}
 <section class="card">
@@ -157,16 +178,17 @@ function copyAddr(btn) {  // ✓ on success (✗ if the browser refused), back t
 (() => {
   const box = document.getElementById('sync'), log = document.getElementById('sync-log');
   const details = document.getElementById('sync-details');
-  let wasRunning = {{ 'true' if job and job.running else 'false' }}, current = null;
+  let wasRunning = {{ 'true' if job and job.running else 'false' }}, current = null, shown = 0;
   const dismissed = () => { try { return sessionStorage.getItem('syncClosed'); } catch (e) { return null; } };
   document.getElementById('sync-close').onclick = () => {
     box.classList.add('hide');
     try { if (current) sessionStorage.setItem('syncClosed', String(current)); } catch (e) {}
   };
   async function poll() {
-    let j; try { j = await (await fetch("{{ url_for('sync_status') }}")).json(); } catch (e) { return setTimeout(poll, 3000); }
+    let j; try { j = await (await fetch("{{ url_for('sync_status') }}?since=" + shown)).json(); } catch (e) { return setTimeout(poll, 3000); }
     if (!j) return;
     const isNew = current !== null && current !== j.started;
+    if (current !== j.started && shown) { shown = 0; log.textContent = ''; return poll(); }  // another job: start over
     current = j.started;
     box.classList.toggle('hide', dismissed() === String(j.started));  // closed by the user: stays closed for this job
     if (isNew) details.open = true;
@@ -179,7 +201,8 @@ function copyAddr(btn) {  // ✓ on success (✗ if the browser refused), back t
     document.getElementById('sync-state').textContent = j.running ? `running · ${m}:${sec}`
       : (j.returncode === 0 ? `finished in ${m}:${sec}` : `failed (exit ${j.returncode}) after ${m}:${sec}: see the log`);
     const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
-    log.textContent = j.log.join('\n'); if (atEnd) log.scrollTop = log.scrollHeight;
+    if (j.log.length) { log.textContent += (shown ? '\n' : '') + j.log.join('\n'); shown = j.lines; }  // every line kept
+    if (atEnd) log.scrollTop = log.scrollHeight;
     if (j.running) { wasRunning = true; details.open = true; setTimeout(poll, 1500); }
     else if (wasRunning && j.returncode === 0) location.reload();  // fresh balances
   }

@@ -114,3 +114,21 @@ def test_apply_reported_proceeds(tmp_path, monkeypatch) -> None:  # type: ignore
     # reconciling afterwards still compares against our own figures
     g = next(g for g in m.reconcile(m.load_forms(2025)[0], lines)["groups"] if g.asset == "BTC")
     assert g.proceeds_diff == Decimal("-7.61")
+
+
+def test_sales_the_1099da_does_not_list_move_to_box_i_or_l(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Gemini left a small USDC sale off its 1099-DA: it belongs in Box I (not reported to you), not H."""
+    import loledger.form1099da as m
+
+    monkeypatch.setattr(m, "DATA_DIR", tmp_path)
+    m.import_file(2025, "Gemini", "f.csv", CSV)
+    lines = [_ln("0.019 BTC", "BTC", "0.019", "01/17/2025", "1942.39"),   # on the form
+             _ln("1434.94 USDC", "USDC", "1434.94", "07/18/2025", "1434.94"),  # not on it
+             _ln("2 ETH", "ETH", "2", "03/02/2025", "5000.00")]  # dated a day later than the form: still on it
+    lines[1].term = "short"
+    long = _ln("5 SOL", "SOL", "5", "08/01/2025", "900")
+    long.box, long.term = "K", "long"
+    other = _ln("1 BTC", "BTC", "1", "05/05/2025", "1")
+    other.account = "Coinbase"  # a broker with no imported form: unchanged
+    assert m.move_unreported(2025, lines + [long, other]) == 2
+    assert [ln.box for ln in lines] == ["H", "I", "H"] and long.box == "L" and other.box == "H"

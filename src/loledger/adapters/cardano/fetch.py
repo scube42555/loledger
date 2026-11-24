@@ -67,6 +67,21 @@ class KoiosClient:
                 return rows
             offset += LIST_PAGE
 
+    def cached_through(self, stake: str) -> int | None:
+        """Newest block in this wallet's own tx list as last fetched (cache only, no network); None if never."""
+        best: int | None = None
+        offset = 0
+        while True:
+            page = self.store.get_raw(self.source, "account_txs", {"_stake_address": stake, "offset": offset,
+                                                                    "limit": LIST_PAGE, "order": "block_height.asc"})
+            if page is None:
+                return best
+            for t in page:
+                best = max(best or 0, int(t["block_height"]))
+            if len(page) < LIST_PAGE:
+                return best
+            offset += LIST_PAGE
+
     def reward_history(self, stake: str) -> list[dict[str, Any]]:
         """Per-epoch staking rewards credited to the stake address's reward account (all pools, all types)."""
         rows: list[dict[str, Any]] = []

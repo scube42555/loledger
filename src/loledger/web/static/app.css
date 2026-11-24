@@ -129,3 +129,37 @@ h3.sub { margin-top: 18px; }
 .t tr.yours td:first-child { border-left: 2px solid var(--accent); border-radius: 10px 0 0 10px; }
 .t tr.yours td:last-child { border-right: 2px solid var(--accent); border-radius: 0 10px 10px 0; }
 .t tr.yours td > span { font-size: 16px; font-weight: 650; }
+
+/* transactions */
+.filters { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: end; }
+.filters label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.filters label.row { display: flex; gap: 6px; align-items: center; color: var(--text); padding-bottom: 7px; }
+.filters .range { display: flex; gap: 4px; align-items: center; }
+.filters .actions { display: flex; gap: 8px; margin-left: auto; }
+.t.txs td { vertical-align: top; }
+.nowrap { white-space: nowrap; }
+.chip.kind { margin-left: 0; white-space: nowrap; }
+.chip.kind[data-k="Trade"], .chip.kind[data-k^="Order"] { color: var(--accent); }
+.chip.kind[data-k="Income"] { color: var(--pos); }
+.chip.kind[data-k="Spam"], .chip.kind[data-k="Failed"] { color: var(--neg); }
+.chip.kind[data-k="Needs sync"] { background: var(--warn-bg); border: 1px solid var(--warn-line); }
+.pager { display: flex; gap: 14px; align-items: center; justify-content: center; margin-top: 14px; }
+.t.txs td.acct { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unpaired-list { margin: 4px 0 8px; padding-left: 20px; } .unpaired-list > li { margin-bottom: 6px; }
+.unpaired-list ul { margin: 2px 0 0; padding-left: 18px; color: var(--muted); }
+/* checkbox dropdowns (Transactions filters) */
+.filters .field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.ms { position: relative; }
+.ms > summary { list-style: none; cursor: pointer; min-width: 150px; max-width: 240px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; color: var(--text); font-size: 14px; padding-right: 26px; }
+.ms > summary::-webkit-details-marker { display: none; }
+.ms > summary::after { content: "▾"; position: absolute; right: 10px; top: 7px; color: var(--muted); font-size: 11px; }
+.ms-pop { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 260px; max-width: 420px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 8px; }
+.ms-find { width: 100%; box-sizing: border-box; margin-bottom: 6px; }
+.ms-opts { max-height: 280px; overflow: auto; display: grid; }
+.ms-opts label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 5px; color: var(--text);
+  font-size: 13px; cursor: pointer; }
+.ms-opts label:hover { background: var(--chip); }
+.ms-opts label[hidden] { display: none; }
+.ms-foot { display: flex; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }

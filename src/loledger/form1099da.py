@@ -394,6 +394,21 @@ def reconcile(form: Form, lines: list[Any]) -> dict[str, Any]:
             "big_diffs": [g for g in gs if g.status in ("units_differ", "proceeds_differ")]}
 
 
+NOT_REPORTED_BOX = {"G": "I", "H": "I", "J": "L", "K": "L"}  # 1099-DA box -> the box for sales it doesn't list
+
+
+def move_unreported(year: int, lines: list[Any]) -> int:
+    """A broker account's sales that its imported 1099-DA doesn't list (e.g. small stablecoin sales brokers may leave
+    out) go in Box I/L, "not reported to you on Form 1099-DA", instead of G/H/J/K. Returns the lines moved."""
+    n = 0
+    for form in load_forms(year):
+        for ln in reconcile(form, lines)["unreported_lines"]:
+            if ln.box in NOT_REPORTED_BOX:
+                ln.box = NOT_REPORTED_BOX[ln.box]
+                n += 1
+    return n
+
+
 def apply_reported_proceeds(year: int, lines: list[Any]) -> tuple[int, Decimal]:
     """Give the Form 8949 lines covered by the year's 1099-DAs the proceeds the broker reported (so the IRS's
     matching agrees). Only asset-days whose units agree are changed; a day's reported total is spread over its

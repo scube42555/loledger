@@ -225,3 +225,23 @@ def test_comb_cells_are_fitted_to_the_printed_bars() -> None:
     assert fit is not None and fit[0] == pytest.approx(500) and fit[2] == pytest.approx(560)
     assert _fit_comb([480.0], 9, [447, 678, 576, 692]) is None  # a pattern it doesn't know: left alone
     assert _fit_comb([447.2, 485.1, 511.9, 575.8], 9, [447, 678, 576, 692]) is not None  # box edges ignored
+
+
+@pytest.mark.skipif(shutil.which("qpdf") is None, reason="qpdf not installed")
+def test_kept_empty_checkbox_gets_an_off_value_so_qpdf_can_flatten_the_packet(tmp_path: Path) -> None:
+    """IRS checkboxes often carry no /V: re-added as an empty field it must be /Off, or qpdf --generate-appearances
+    exits 3 ("checkbox field ... value whose type is not name") and the packet build fails."""
+    src, part = tmp_path / "form.pdf", tmp_path / "part.pdf"
+    _form(src)
+    r = PdfReader(str(src))
+    annots: Any = r.pages[0]["/Annots"]
+    box: Any = annots[0].get_object()
+    del box[NameObject("/V")]
+    w = PdfWriter()
+    w.add_blank_page(300, 200)
+    root: Any = r.trailer["/Root"]
+    assert add_fields(w, {"line17_yes": [(0, box)]}, {0: 0}, root["/AcroForm"]) == 1
+    with open(part, "wb") as fh:
+        w.write(fh)
+    assert (PdfReader(str(part)).get_fields() or {})["line17_yes"]["/V"] == "/Off"
+    assert assemble([part], tmp_path / "packet.pdf") == 1  # flattens with qpdf without a warning exit

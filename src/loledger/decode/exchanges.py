@@ -18,8 +18,17 @@ from importlib import resources
 
 import yaml
 
+from ..config import norm_address
 from ..model import NATIVE_ASSET, AssetKind, Movement, TxContext
-from ..registry import norm_symbol
+from ..registry import norm_symbol as _norm
+
+RENAMED = {"matic": "pol"}  # an exchange may still report the old ticker of a migrated token
+
+
+def norm_symbol(sym: str) -> str:
+    """Symbol for matching an exchange record to a wallet leg: case-folded, bridge suffix dropped, renames applied."""
+    s = _norm(sym)
+    return RENAMED.get(s, s)
 from ..rules import Classified, Cls
 
 DUST = Decimal("0.01")
@@ -243,7 +252,8 @@ def link_exchange_heuristic(rows: list[Classified], deposit_addresses: dict[str,
             if not -early <= gap <= MAX_GAP:
                 continue
             hints = []
-            cp = c.movement.counterparty if c.movement.asset_kind != AssetKind.EXCHANGE else str(c.tx.meta.get("address") or "").lower()
+            cp = c.movement.counterparty if c.movement.asset_kind != AssetKind.EXCHANGE \
+                else norm_address(c.tx.meta.get("address") or "")
             if addr_venue.get(cp) == x.movement.chain.lower():
                 hints.append("known deposit address")
             if want_label and label_wallet.get(want_label) == c.movement.wallet:

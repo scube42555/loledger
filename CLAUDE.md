@@ -73,7 +73,9 @@ fetch ──► normalize ──► rules ──► decode ──► prices ─�
 2. **Normalize** (`adapters/<chain>/normalize.py`): one signed leg per asset and counterparty, from the
    wallet's point of view (`model.py`: `Movement`, `TxContext`).
    - **EVM:** wrap and unwrap legs come from WETH9 events.
-   - **Cardano:** an output belongs to the wallet only if its payment part is a key. Legs are netted per
+   - **Cardano:** a tx a wallet signed but that was stored by another wallet's fetch (past the signer's own cached
+     `account_txs`, `KoiosClient.cached_through`) is classified `OTHER/awaiting_sync` (fee only) until the signer syncs.
+     Also: an output belongs to the wallet only if its payment part is a key. Legs are netted per
      counterparty, and fee, deposit, reward and mint legs are added so every tx reconciles exactly.
 3. **Rules** (`rules.py`): deterministic, confidence 1.0, applied in order: failed → spam → wrap → yield → LP
    → swap / signed-order fill → escrow order → transfer, bridge, airdrop or claim.
@@ -130,6 +132,28 @@ After classification:
     `AppData.refresh()` reloads, and the page polls `/accounts/sync/status`. One wallet or exchange syncs with
     `run --only <address|exchange>` (a wallet adds --refresh). Only that one is fetched. Everything else is
     re-classified from the store, which gives the same output as a full run in ~20 s instead of minutes.
+    After a one-account sync, `accounts.counterparts` diffs classified.csv against the pre-sync leg keys: new,
+    unlinked transfers whose other side is a known account still missing that tx (exchange from a
+    `to_/from_exchange:<venue>` subtype, wallet from the counterparty or an exchange row's `withdrawal_address`)
+    get a follow-up `run --refresh --only <those>`; repeated on each round's new transfers until a round finds
+    nothing. Each account syncs at most once per job (worst case ≈ Sync All). Gifts, unsupported chains, closed
+    exchanges are skipped.
+    Also queued: the wallet of an `awaiting_sync` row, and for a deposit from an unrecognised sender the exchanges
+    with API keys (`accounts.api_exchanges`). Exchanges are also found from payout addresses learned from matched
+    withdrawals.
+    The Accounts page also runs the same check over the whole history (`accounts.unpaired`, cached per load in
+    `AppData.unpaired`; unknown senders excluded) and offers "Sync these accounts" (`Syncer.sync_accounts`).
+    A side counts as present by tx hash on any id the wallet uses (Cardano: listed addr1 + stake key) or, for
+    chains with a tx id per side (Chia), by a mirror leg (same time, amount, pointing back).
+    An exchange withdrawal's destination chain comes from its `withdrawal_network` (`accounts.network_chain`), else
+    the one listed chain where the token is native; a network the address isn't listed on is shown but not synced
+    (`Gap.sync`). The sync log keeps every line (`SyncJob.status(since)` hands out new ones; `data/last_sync.log`).
+  - **Transactions:** `/transactions`, backed by `web/transactions.py`. classified.csv + manual.yaml rows are
+    grouped into one transaction per (chain, tx, account), given a plain-language type (`kind_of`), and filtered
+    server-side from GET params (account, chain, asset, type: each repeatable = any of them, via the checkbox
+    dropdowns; date range, USD value, search, spam), 100 per page. Subtype wins over the generic transfer
+    classes in `kind_of` (bridges -> Bridge, swap-service legs -> Trade).
+    `/transactions.csv` downloads the filtered set, one row per leg. Built once per load (`AppData.transactions`).
   - **Tax reports:** `/tax` redirects to the last year viewed (the `tax_year` cookie) or else the most recent
     year. `/tax/<year>` has ←/→ buttons and arrow-key navigation, the export dialog, the Form 8949 summary
     totals, and the year's Form 1099-DA section (add, reconcile, remove). `/1099-da` only redirects there.
@@ -183,5 +207,16 @@ After classification:
   rename to loledger. Keep them: renaming orphans the user's cache.
 - Money is `Decimal` throughout. Round to cents per Form 8949 line (`_cents`) before summing, so the box
   totals equal the sum of the lines.
-- EVM addresses are lower-cased internally; addresses.csv may use any case.
+  IRS form pages (8949, Schedule D, Schedule 1) print whole dollars (`_dollars`, half-up); a line that adds
+  amounts is summed in cents and only its total rounded (IRS rule). The 8949 statement keeps cents. Fill form pages
+  by field number or name, never by field order: some years' forms omit shaded boxes (2024 Schedule D, 1a/8a (g)).
+- EVM addresses are lower-cased internally (compare with `config.norm_address`; base58/bech32 stay case-sensitive)
+  and shown in EIP-55 checksum case (`config.display_address`, the `addr` template filter). User files keep
+  the case typed: never rewrite addresses.csv or exchange_deposits.yaml lower-cased.
+- `run --only <wallet>` fetches just that wallet, but Cardano legs are still normalized against ALL the user's
+  Cardano wallets (counterparties resolve to stake keys at normalize time), and Chia fetches every Chia wallet
+  (pooled spends pair across them; coin lists aren't cached). Keep this for any adapter that resolves own
+  wallets at fetch time, or a one-wallet sync books transfers to the user's other wallets as external.
+- Exchange records are matched to wallet legs with `decode/exchanges.norm_symbol`, which applies renames
+  (`RENAMED`, e.g. MATIC → POL) on top of `registry.norm_symbol`.
 - `verify` mismatches on spoofed/spam tokens are expected: their balances don't follow Transfer events.

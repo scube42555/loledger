@@ -66,8 +66,9 @@ def cmd_fetch(args: argparse.Namespace, settings: Settings, store: Store) -> int
             by_chain[w.chain.name].append(w)
     for chain_name, ws in by_chain.items():
         chain = ws[0].chain
-        if chain.kind == "cardano":
-            _fetch_cardano(args, chain, ws, store)
+        mine = [w for w in wallets if w.chain.name == chain_name]  # every listed wallet on the chain, selected or not
+        if chain.kind == "cardano":  # counterparties are resolved to the user's wallets at normalize time
+            _fetch_cardano(args, chain, ws, store, everyone=mine)
             continue
         if chain.kind == "utxo":
             _fetch_utxo(chain, ws, store)
@@ -90,8 +91,8 @@ def cmd_fetch(args: argparse.Namespace, settings: Settings, store: Store) -> int
         if chain.kind == "hedera":
             _fetch_hedera(chain, ws, store)
             continue
-        if chain.kind == "chia":
-            _fetch_chia(chain, ws, store)
+        if chain.kind == "chia":  # pooled spends are paired across all the user's Chia wallets, whose coin
+            _fetch_chia(chain, mine, store)  # lists aren't cached: fetch them all (one call each)
             continue
         if chain.kind != "evm":
             log.warning("skipping %d %s wallet(s): adapter not implemented yet", len(ws), chain_name)
@@ -542,17 +543,21 @@ def cardano_wallet_ids(chain: Any, ws: list[WalletSpec], store: Store) -> dict[s
     return CardanoFetcher(chain, store).resolve([w.address for w in ws])
 
 
-def _fetch_cardano(args: argparse.Namespace, chain: Any, ws: list[WalletSpec], store: Store) -> None:
+def _fetch_cardano(args: argparse.Namespace, chain: Any, ws: list[WalletSpec], store: Store,
+                   everyone: list[WalletSpec] | None = None) -> None:
+    """Fetch the wallets in ws. Legs are attributed against all the user's Cardano wallets (`everyone`), so a
+    one-wallet sync still books a send to another of them as an own transfer."""
     fetcher = CardanoFetcher(chain, store, refresh_tail=args.refresh)
     ids = fetcher.resolve([w.address for w in ws])
     wallets = set(ids.values())
+    own = wallets | set(fetcher.resolve([w.address for w in everyone or []]).values())
     print(f"\n== {chain.name} (Koios; {len(ws)} csv rows -> {len(wallets)} stake keys)")
     for w in ws:
         if ids[w.address] != w.address:
             print(f"  {w.address[:20]}… -> {ids[w.address]}")
     for stake in sorted(wallets):
         bundle = fetcher.fetch_wallet(stake)
-        moves, txs = normalize_cardano(chain, bundle, wallets)
+        moves, txs = normalize_cardano(chain, bundle, own)
         store.replace_wallet_movements(chain.name, stake, moves)
         store.upsert_txs(txs.values())
         spec = WalletSpec(address=stake, chain=chain, label="")
@@ -1260,8 +1265,9 @@ def _classify_cardano(ws: list[WalletSpec], store: Store) -> tuple[list[Classifi
         if rmoves:
             state.reward_accounts.add(st)
             rows.extend(classify_reward_account(st, rmoves, txs))
-    for st in stakes:
-        rows.extend(classify_cardano_wallet(st, store.load_movements(chain.name, st), txs, ctx, state))
+    for st in stakes:  # synced_through: a tx it signed past its own fetched history is a stand-in row
+        moves = store.load_movements(chain.name, st)
+        rows.extend(classify_cardano_wallet(st, moves, txs, ctx, state, synced_through=fetcher.koios.cached_through(st)))
     finalize_orders(state, fetcher.koios.spent_status)
     return rows, dict(state.unknown_scripts)
 
