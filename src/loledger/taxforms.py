@@ -364,7 +364,7 @@ def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]],
     from io import BytesIO
 
     from pypdf import PdfReader, PdfWriter
-    from pypdf.generic import ArrayObject, NameObject
+    from pypdf.generic import ArrayObject, DecodedStreamObject, NameObject
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas
 
@@ -406,7 +406,12 @@ def _fill_pages(template: Path, pages: list[tuple[int, dict[str, str]]],
         if contents is not None and not isinstance(contents.get_object(), ArrayObject):
             # copies of one template page share a single content stream, and merging writes back into it: every
             # copy would get every page's values (Form 8949 page 2 for Boxes K and L). An array gets a new stream.
-            page[NameObject("/Contents")] = ArrayObject([contents])
+            # Each copy gets its own copy of the stream: pypdf clones the template's stream once for all copies,
+            # and merge_page empties the stream it replaces, so every copy after the first lost the form itself
+            # (2025 Form 8949 page 2: Box L's values on a blank page).
+            st = DecodedStreamObject()
+            st.set_data(contents.get_object().get_data())
+            page[NameObject("/Contents")] = ArrayObject([out._add_object(st)])
         page.merge_page(overlay.pages[i])
     if keep:
         from .pdfforms import _name, add_fields

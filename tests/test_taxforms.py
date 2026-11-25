@@ -121,12 +121,13 @@ def test_copies_of_one_form_page_each_show_only_their_own_values() -> None:
     if not tpl.exists():
         pytest.skip("blank IRS Form 8949 not downloaded (data/irs_forms)")
     first = _f8949_layout(tpl)[1]["rows"][0][0]  # page 2, row 1, column (a)
-    w = _fill_pages(tpl, [(1, {first: "AAAA"}), (1, {first: "BBBB"})])
+    w = _fill_pages(tpl, [(1, {first: "AAAA"}), (1, {first: "BBBB"}), (1, {})])
     buf = BytesIO()
     w.write(buf)
     pages = [p.extract_text() for p in PdfReader(BytesIO(buf.getvalue())).pages]
     assert "AAAA" in pages[0] and "BBBB" not in pages[0]
     assert "BBBB" in pages[1] and "AAAA" not in pages[1]
+    assert all("Long-Term" in t for t in pages)  # every copy keeps the form itself, not only the values
 
 
 def test_whole_dollars_and_readable_statement_accounts() -> None:
