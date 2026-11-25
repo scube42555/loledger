@@ -240,14 +240,16 @@ def add_fields(w: PdfWriter, groups: Mapping[str, Sequence[Widget]], page_map: M
     return n
 
 
-Blank = tuple[str, tuple[float, float, float, float], str]  # (field name, (x0, y0, x1, y1), "text" | "check")
+Blank = (tuple[str, tuple[float, float, float, float], str]  # (field name, (x0, y0, x1, y1), "text" | "check")
+         | tuple[str, tuple[float, float, float, float], str, int])  # + n: a "text" comb box of n equal cells
 
 
 def add_blank_fields(src: Path | str, out: Path | str, fields: Mapping[int, Sequence[Blank]],
                      size: float = 9) -> None:
     """Add empty fillable boxes to a form that has none (SCDOR forms): {page: [(name, rect, kind)]}. Boxes with
     the same name are one field (typed once, shown everywhere); name it shared_<x> to also share it across the
-    parts of an `assemble`d packet. Text is Helvetica `size` pt; a checkbox shows a check mark when ticked."""
+    parts of an `assemble`d packet. Text is Helvetica `size` pt; a checkbox shows a check mark when ticked. A
+    text box given a 4th element n is a comb field: up to n characters, one per equal cell across the box."""
     from io import BytesIO
 
     from pypdf.generic import DecodedStreamObject, FloatObject, NumberObject
@@ -289,15 +291,22 @@ def add_blank_fields(src: Path | str, out: Path | str, fields: Mapping[int, Sequ
         page: Any = w.pages[pi]
         if "/Annots" not in page:
             page[NameObject("/Annots")] = ArrayObject()
-        for name, (x0, y0, x1, y1), kind in items:
+        for item in items:
+            name, (x0, y0, x1, y1), kind = item[0], item[1], item[2]
+            comb = item[3] if len(item) > 3 else None
             if kind not in ("text", "check"):
                 raise ValueError(f"field kind must be 'text' or 'check', not {kind!r}")
+            if comb is not None and kind != "text":
+                raise ValueError(f"only a text box can be a comb field, not {name!r}")
             if name not in parents:
                 parent = DictionaryObject({
                     NameObject("/T"): TextStringObject(name), NameObject("/Kids"): ArrayObject(),
                     NameObject("/FT"): NameObject("/Tx" if kind == "text" else "/Btn")})
                 if kind == "text":
                     parent[NameObject("/DA")] = TextStringObject(f"/Helv {size:g} Tf 0 g")
+                    if comb is not None:
+                        parent[NameObject("/Ff")] = NumberObject(COMB)
+                        parent[NameObject("/MaxLen")] = NumberObject(comb)
                 else:
                     parent[NameObject("/V")] = NameObject("/Off")
                 parents[name] = w._add_object(parent)

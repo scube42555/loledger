@@ -195,17 +195,23 @@ def test_blank_fields_on_a_plain_form_and_shared_ones_merge_across_packet_parts(
     add_blank_fields(a, a, {0: [("shared_ssn", (40, 700, 200, 714), "text"), ("phone", (40, 680, 200, 694), "text"),
                                 ("ok", (300, 680, 310, 690), "check")],
                             1: [("shared_ssn", (400, 750, 500, 764), "text")]})
-    add_blank_fields(b, b, {0: [("shared_ssn", (40, 700, 200, 714), "text")]})
+    add_blank_fields(b, b, {0: [("shared_ssn", (40, 700, 200, 714), "text"), ("ssn_3", (40, 650, 90, 664), "text", 4)]})
     f = PdfReader(str(a)).get_fields() or {}
     assert len(f["shared_ssn"]["/Kids"]) == 2 and f["ok"]["/FT"] == "/Btn" and f["phone"]["/FT"] == "/Tx"
+    assert "/MaxLen" not in f["phone"]
     with pytest.raises(ValueError):
         add_blank_fields(b, tmp_path / "x.pdf", {0: [("x", (0, 0, 1, 1), "radio")]})
+    with pytest.raises(ValueError):
+        add_blank_fields(b, tmp_path / "x.pdf", {0: [("x", (0, 0, 1, 1), "check", 4)]})
     assert assemble([a, b], out) == 3
     f = PdfReader(str(out)).get_fields() or {}
     assert len(f["shared_ssn"]["/Kids"]) == 3  # one SSN for the whole packet
     assert "1-phone" in f and "1-ok" in f
     r = PdfReader(str(out))
-    assert [len(p.get("/Annots") or []) for p in r.pages] == [3, 1, 1]  # no leftover copies of the boxes
+    assert [len(p.get("/Annots") or []) for p in r.pages] == [3, 1, 2]  # no leftover copies of the boxes
+    root: Any = r.trailer["/Root"]
+    comb = [k.get_object() for k in root["/AcroForm"]["/Fields"] if k.get_object()["/T"] == "2-ssn_3"]
+    assert comb[0]["/MaxLen"] == 4 and int(comb[0]["/Ff"]) & (1 << 24)  # a comb box stays one
     # rename links another part's empty field into the shared one (an attached 1040-X copy's SSN box)
     src, x = tmp_path / "form.pdf", tmp_path / "x.pdf"
     _form(src)
